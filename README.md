@@ -6,7 +6,7 @@
 git clone ### TODO: mettre url gitHub
 ```
 ### TODO: vérifier qu'on a besoin d'installer browserify
-If you don't have already install **browserify**
+If you don't have already install [**browserify**](http://browserify.org/)
 ```
 npm install -g browserify
 ```
@@ -16,7 +16,7 @@ Then:
 grunt
 ```
 
-Don't forget to download **Ace** (http://ace.c9.io/#nav=about) and to extract it in your client-side folder as well as to install **socket.io** in your server-side folder.
+Don't forget to download [**Ace**](http://ace.c9.io/#nav=about) and to extract it in your client-side folder as well as to install [**socket.io**](http://socket.io/) in your server-side folder.
 
 # Utilisation
 **In your HTML file:**
@@ -45,5 +45,5 @@ This module implement an adapter to allow the coordinator to communicate with th
 
 # See also
 * **mute-structs**
-* **mute-texteditor-client**: https://github.com/MatthieuNICOLAS/mute-client
-* **mute-demo**
+* **mute-server**
+* [**mute-demo**](https://github.com/MatthieuNICOLAS/mute-demo)
