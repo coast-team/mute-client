@@ -41,7 +41,7 @@ The network architecture provided consist in an **central server** communicating
 You can easily **implement your own network architecture**, as long as you respect the **name of the events and the data structure** used to communicate between the **coordinator and the network adapter**.
 
 ### Text Editor
-This module implement an adapter to allow the coordinator to communicate with the **code editor Ace**. As the same as previously, you can also implement your own adapter to allow user to use another text editor.
+This module implement an adapter to allow the coordinator to communicate with the **code editor [Ace](http://ace.c9.io/#nav=about)**. As the same as previously, you can also implement your own adapter to allow user to use another text editor.
 
 # See also
 * **mute-structs**
