@@ -1,17 +1,25 @@
 ### TODO: Présentation du module
 
 # Installation
+
 ** In your client-side js folder**
+
 ```
 git clone https://github.com/MatthieuNICOLAS/mute-client.git
 ```
+
 ### TODO: vérifier qu'on a besoin d'installer browserify
+
 If you don't have already install [**browserify**](http://browserify.org/)
+
 ```
 npm install -g browserify
 ```
+
 Then:
+
 ###TODO: vérifier qu'on a besoin d'installer grunt
+
 ```
 grunt
 ```
@@ -19,7 +27,9 @@ grunt
 Don't forget to download [**Ace**](http://ace.c9.io/#nav=about) and to extract it in your client-side folder as well as to install [**socket.io**](http://socket.io/) in your server-side folder.
 
 # Utilisation
+
 **In your HTML file:**
+
 ```
 <script src="path/js/mute-client/build/mute-client.js"></script>
 <script src="path/js/ace/src-noconflict/ace.js"></script>
@@ -41,9 +51,12 @@ The network architecture provided consist in an **central server** communicating
 You can easily **implement your own network architecture**, as long as you respect the **name of the events and the data structure** used to communicate between the **coordinator and the network adapter**.
 
 ### Text Editor
+
 This module implement an adapter to allow the coordinator to communicate with the **code editor Ace**. As the same as previously, you can also implement your own adapter to allow user to use another text editor.
 
 # See also
-* **mute-structs**
-* **mute-server**
+
 * [**mute-demo**](https://github.com/MatthieuNICOLAS/mute-demo)
+* [**mute-server**](https://github.com/MatthieuNICOLAS/mute-server)
+* [**mute-structs**](https://github.com/MatthieuNICOLAS/mute-structs)
+* [**mute-utils**](https://github.com/MatthieuNICOLAS/mute-utils)
