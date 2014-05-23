@@ -45,5 +45,5 @@ This module implement an adapter to allow the coordinator to communicate with th
 
 # See also
 * **mute-structs**
-* **mute-texteditor-client**
+* **mute-texteditor-client**: https://github.com/MatthieuNICOLAS/mute-client
 * **mute-demo**
