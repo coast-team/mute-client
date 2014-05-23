@@ -3,7 +3,7 @@
 # Installation
 ** In your client-side js folder**
 ```
-git clone ### TODO: mettre url gitHub
+git clone https://github.com/MatthieuNICOLAS/mute-client.git
 ```
 ### TODO: vérifier qu'on a besoin d'installer browserify
 If you don't have already install [**browserify**](http://browserify.org/)
