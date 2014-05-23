@@ -14,7 +14,10 @@
     "ace-editor"
   ],
   "author": "Matthieu Nicolas",
-  "license": "GPL",
+  "licenses": [{
+      "type": "GPLv3",
+      "url": "http://www.gnu.org/licenses/gpl-3.0.txt"
+  }],
   "devDependencies": {
     "browserify": "4.1.5",
     "grunt": "0.4.5",
