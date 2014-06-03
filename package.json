@@ -1,10 +1,14 @@
 {
   "name": "mute-client",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "This library can be use in order to transform any textarea on your website into a real-time collaborative text editor. Modules can also be develop in order to set another network architecture or use another text editor.",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MatthieuNICOLAS/mute-client"
   },
   "keywords": [
     "crdt",
