@@ -464,7 +464,6 @@ Coordinator.prototype.setNetwork = function (network) {
 		coordinator.join(args);
 	});
 	this.network.on('receiveOps', function (data) {
-		coordinator.emit('updateLastModificationDate', data);
 		Utils.pushAll(coordinator.bufferLogootSOp, data.logootSOperations);
 	});
 	this.network.on('ack', function (data) {
@@ -653,6 +652,7 @@ Coordinator.prototype.cleanBufferLogootSOp = function () {
 				coordinator.emit('updateLastModificationDate', { lastModificationDate: new Date() });
 			});
 		}
+		this.emit('updateLastModificationDate', { lastModificationDate: new Date() });
 		this.changed = true;
 	}
 };
@@ -872,7 +872,6 @@ SocketIOAdapter.prototype.init = function(data) {
     });
 
     this.socket.on('broadcastOps', function (data) {
-        console.log('On a reçu :', data);
         socketIOAdapter.emit('receiveOps', data);
     });
 
@@ -893,7 +892,6 @@ SocketIOAdapter.prototype.send = function (logootSOperations) {
         "logootSOperations": logootSOperations,
         "lastModificationDate": new Date()
     };
-    console.log('On envoie :  ', obj);
     if(this.socket.socket.connected === true) {
         this.socket.emit('sendOps', obj, function (result) {
             if(result.error === false) {
