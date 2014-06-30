@@ -49,6 +49,7 @@ var AceEditorAdapter = function (itemID, coordinator) {
 	var aceEditorAdapter = this;
 	var style = document.createElement('style');
 	
+	this.coordinator = coordinator;
 	this.currentMarkers = [];
 	this.userInfosChanged = false;
 	this.mousePos = null;
@@ -67,24 +68,7 @@ var AceEditorAdapter = function (itemID, coordinator) {
 	this.editor.getSession().setTabSize(4);
 	this.editor.getSession().setUseWrapMode(true);
 
-	this.editor.on('changeSelection', function () {
-		aceEditorAdapter.userInfosChanged = true;
-	});
-
-	this.editor.on('mousemove', function (e) {
-		aceEditorAdapter.mousePos = aceEditorAdapter.editor.renderer.screenToTextCoordinates(e.clientX, e.clientY);
-		aceEditorAdapter.updateVisibleNames();
-	});
-
-	if(coordinator !== null) {
-		this.coordinator = coordinator;
-		this.coordinator.on('initEditor', function (data) {
-			aceEditorAdapter.init(data);
-		});
-		this.coordinator.on('update', function (data) {
-			aceEditorAdapter.update(data);
-		});
-	}
+	this.switchToEditionMode();
 };
 
 AceEditorAdapter.prototype.__proto__ = events.EventEmitter.prototype;
@@ -93,14 +77,6 @@ AceEditorAdapter.prototype.init = function (data) {
 	var aceEditorAdapter = this;
 	var flag = false;
 	this.update(data);
-
-	this.editor.on('change', function (e) {
-		aceEditorAdapter.onChangeAdapter(e);
-	});
-
-	this.editor.session.on('changeScrollTop', function (e) {
-		aceEditorAdapter.emit('scroll', { topRow: aceEditorAdapter.editor.renderer.getScrollTopRow() });
-    });
 
 	setInterval(function () {
 		var index;// = aceEditorAdapter.editor.session.doc.positionToIndex(aceEditorAdapter.editor.getCursorPosition());
@@ -298,6 +274,46 @@ AceEditorAdapter.prototype.updateVisibleNames = function () {
 	}
 };
 
+AceEditorAdapter.prototype.switchToHistoryMode = function () {
+	//this.removeAllListeners();
+	this.editor.removeAllListeners('change');
+	//this.editor.removeListener('change');// mousemove change changeScrollTop');
+	//this.coordinator.off();
+	this.editor.setReadOnly(true);
+};
+
+AceEditorAdapter.prototype.switchToEditionMode = function () {
+	var aceEditorAdapter = this;
+
+	this.editor.on('changeSelection', function () {
+		aceEditorAdapter.userInfosChanged = true;
+	});
+
+	this.editor.on('mousemove', function (e) {
+		aceEditorAdapter.mousePos = aceEditorAdapter.editor.renderer.screenToTextCoordinates(e.clientX, e.clientY);
+		aceEditorAdapter.updateVisibleNames();
+	});
+
+	if(this.coordinator !== null) {
+		this.coordinator.on('initEditor', function (data) {
+			aceEditorAdapter.init(data);
+		});
+		this.coordinator.on('update', function (data) {
+			aceEditorAdapter.update(data);
+		});
+	}
+
+	this.editor.on('change', function (e) {
+		aceEditorAdapter.onChangeAdapter(e);
+	});
+
+	this.editor.session.on('changeScrollTop', function (e) {
+		aceEditorAdapter.emit('scroll', { topRow: aceEditorAdapter.editor.renderer.getScrollTopRow() });
+    });
+    this.editor.setReadOnly(false);
+
+};
+
 module.exports = AceEditorAdapter;
 },{"events":5}],3:[function(_dereq_,module,exports){
 /*
@@ -328,11 +344,22 @@ var TextDelete = _dereq_('mute-structs').TextDelete;
 var LogootSAdd = _dereq_('mute-structs').LogootSAdd;
 var LogootSDel = _dereq_('mute-structs').LogootSDel;
 
-var Coordinator = function (docID) {
+var Coordinator = function (docID, serverDB) {
+	// Attributes stored into the DB
 	this.docID = docID;
+	this.creationDate = new Date();
+	this.history = [];
+	this.lastModificationDate = new Date();
+	this.replicaNumber = -1;
+	this.clock = 0;
+	this.ropes = null;
+	this.bufferLocalLogootSOp = []; // Buffer contenant les LogootSOperations locales actuellement non ack
+	// --------------------------------
+
+	this.changed = false;
+	this.flagDB = false;
 
 	this.bufferLogootSOp = []; 		// Buffer contenant les LogootSOperations distantes actuellement non traitées
-	this.bufferLocalLogootSOp = []; // Buffer contenant les LogootSOperations locales actuellement non ack
 	this.bufferTextOp = [];			// Buffer contenant les TextOperations locales actuellement non converties en LogootSOperations
 	
 	this.prevOp = false;	// Type de la dernière opération
@@ -342,13 +369,70 @@ var Coordinator = function (docID) {
 	this.busy = false;		// Flag indiquant si l'utilisateur a saisi qqch depuis 1 sec
 	this.flag = false;		// Flag évitant d'appeler simultanément plusieurs fois la même fonction
 	
-	this.ropes = null;
+
 	this.network = null;
 	this.editor = null;
 	this.timerTextOp = null;
+	this.serverDB = serverDB;
 };
 
 Coordinator.prototype.__proto__ = events.EventEmitter.prototype;
+
+Coordinator.prototype.init = function () {
+	var coordinator = this;
+	var callback = function () {
+		if(coordinator.network !== null) {
+			// Wait for the server's current version
+			coordinator.emit('initNetwork', { docID: coordinator.docID, replicaNumber: coordinator.replicaNumber, bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp });
+		}
+		else {
+			// Allow the user to edit the document offline
+			coordinator.join(coordinator);
+		}
+	};
+
+	this.serverDB.models.query()
+	.filter('docID', this.docID)
+	.execute()
+	.done(function (results) {
+		var doc;
+		if(results.length === 0) {
+			// New doc, add it to the DB
+			doc = {
+				docID: coordinator.docID,
+				creationDate: coordinator.creationDate,
+				history: coordinator.history,
+				lastModificationDate: coordinator.lastModificationDate,
+				replicaNumber: coordinator.replicaNumber,
+				clock: coordinator.clock,
+				ropes: coordinator.ropes,
+				bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp
+			};
+			coordinator.serverDB.models.add(doc)
+			.done(function (item) {
+				callback();
+			});
+		}
+		else {
+			// Retrieve the data stored
+			doc = results[0];
+			coordinator.creationDate = doc.creationDate;
+			coordinator.history = doc.history;
+			coordinator.lastModificationDate = doc.lastModificationDate;
+			coordinator.replicaNumber = doc.replicaNumber;
+			coordinator.clock = doc.clock;
+			coordinator.ropes = doc.ropes;
+			coordinator.bufferLocalLogootSOp = doc.bufferLocalLogootSOp;
+			callback();
+		}
+	});
+
+	setInterval(function () {
+		if(coordinator.changed === true) {
+			coordinator.updateDoc();
+		}
+	}, 1000);
+};
 
 Coordinator.prototype.setEditor = function (editor) {
 	var coordinator = this;
@@ -383,41 +467,16 @@ Coordinator.prototype.setNetwork = function (network) {
 		coordinator.emit('updateLastModificationDate', data);
 		Utils.pushAll(coordinator.bufferLogootSOp, data.logootSOperations);
 	});
-	this.network.on('ack', function (length) {
-		coordinator.bufferLocalLogootSOp = coordinator.bufferLocalLogootSOp.splice(length);
+	this.network.on('ack', function (data) {
+		if(data.length > 0) {
+			coordinator.bufferLocalLogootSOp = coordinator.bufferLocalLogootSOp.splice(data.length);
+			coordinator.changed = true;
+		}
 	});
 	this.network.on('receiveInfosUsers', function (data) {
 		delete data.infosUsers[coordinator.ropes.replicaNumber];
 		coordinator.emit('updateRemoteIndicators', data);
-	});
-
-	replicaNumber = -1;
-	if(localStorage[this.docID] !== null
-		&& localStorage[this.docID] !== undefined) {
-		try {
-			content = JSON.parse(localStorage[this.docID]);
-			if(content.replicaNumber === null || content.replicaNumber === undefined
-				|| content.clock === null || content.clock === undefined) {
-				// The item stored doesn't respect the expected format
-				localStorage.removeItem(this.docID);
-			}
-			else {
-				if(content.replicaNumber < 1) {
-					// The current replica number isn't authorized...
-					localStorage.removeItem(this.docID);
-				}
-				else {
-					replicaNumber = content.replicaNumber;	
-				}
-			}
-		}
-		catch (e) {
-			// The item stored isn't a JSON object
-			localStorage.removeItem(this.docID);
-		}
-	}
-
-	this.emit('initNetwork', { docID: this.docID, replicaNumber: replicaNumber });
+	});	
 };
 
 Coordinator.prototype.addBufferTextOp = function (data) {
@@ -519,18 +578,28 @@ Coordinator.prototype.cleanBufferTextOp = function () {
 		}
 		for(i; i<taille; i++) {
 			to = this.bufferTextOp.shift();
+			// Add the text operation to the history
+			if(to.length != null && (to.offset != null || to.offset == 0)) {
+				// Deletion
+				to.deletion = this.ropes.str.substr(to.offset, to.length);
+			}
+			this.history.push(to);
 			logootSOperations.push(to.applyTo(this.ropes));
 		}
 		//Il faut maintenant envoyer les logootSOperations générées au serveur et aux autres peers
 		if(logootSOperations.length !== 0) {
 			//On stocke en local au cas où il y a une déconnexion
+			this.changed = true;
 			Utils.pushAll(this.bufferLocalLogootSOp, logootSOperations);
 			this.emit('operations', logootSOperations);
 		}
 
+		/*
 		content = JSON.parse(localStorage[this.docID]);
 		content.clock = this.ropes.clock;
-		localStorage[this.docID] = JSON.stringify(content);
+		*/
+		this.clock = this.ropes.clock;
+		//localStorage[this.docID] = JSON.stringify(content);
 		this.flag = false;
 	}
 };
@@ -551,7 +620,7 @@ Coordinator.prototype.cleanBufferLogootSOp = function () {
 		&& this.bufferTextOp.length === 0 && this.bufferLogootSOp.length > 0 ) {
 		this.flag = true;
 		if(this.editor !== null) {
-			this.editor.removeAllListeners('change');	
+			this.editor.removeAllListeners('change');
 		}
 		temp = this.bufferLogootSOp.shift();
 		lo = this.generateLogootSOp(temp);
@@ -560,6 +629,11 @@ Coordinator.prototype.cleanBufferLogootSOp = function () {
 		for(i=0; i<tos.length; i++)
 		{
 			to = tos[i];
+			if(to.length != null && (to.offset != null || to.offset == 0)) {
+				// Deletion
+				to.deletion = this.ropes.str.substr(to.offset, to.length);
+			}
+			this.history.push(to);
 			res = this.applyTextOperation(this.ropes.str, to);
 			this.ropes.str = res.str;
 			diffCursor += res.diffCursor;
@@ -579,6 +653,7 @@ Coordinator.prototype.cleanBufferLogootSOp = function () {
 				coordinator.emit('updateLastModificationDate', { lastModificationDate: new Date() });
 			});
 		}
+		this.changed = true;
 	}
 };
 
@@ -632,49 +707,28 @@ Coordinator.prototype.join = function (json) {
 	var coordinator = this;
 
 	var temp = [];
-	var replicaNumber;
-	var clock;
 	var content;
-	
-	if(localStorage[this.docID] === null || localStorage[this.docID] === undefined) {
-		localStorage[this.docID] = JSON.stringify({ replicaNumber: json.replicaNumber, clock: 0 });
-	}
-	else {
-		try {
-			content = JSON.parse(localStorage[this.docID]);
-			if(content.replicaNumber === null || content.replicaNumber === undefined
-				|| content.clock === null || content.clock === undefined) {
-				localStorage[this.docID] = JSON.stringify({ replicaNumber: json.replicaNumber, clock: 0 });
-			}
-		}
-		catch (e) {
-			localStorage[this.docID] = JSON.stringify({ replicaNumber: json.replicaNumber, clock: 0 });
-		}
-	}
 
-	content = JSON.parse(localStorage[this.docID]);
+	json.docID = this.docID;	
 
-	replicaNumber = content.replicaNumber;
-	clock = content.clock;
+	this.replicaNumber = json.replicaNumber;
+	this.lastModificationDate = json.lastModificationDate;
+	this.creationDate = json.creationDate;
 
 	if(this.editor !== null) {
 		this.editor.removeAllListeners('change');
 	}
-	this.ropes = new LogootSRopes(replicaNumber);
-	this.ropes.copyFromJSON(json.ropes);
 
-	this.ropes.clock = clock;
+	// Have to use a var temp in case of replicating the coordinator's ropes (offline-mode)
+	var temp = new LogootSRopes(this.replicaNumber);
+	temp.copyFromJSON(json.ropes);
+	temp.clock = this.clock;
+	
+	this.ropes = temp;
 
 	this.history = json.history;
 
-	if(this.bufferLocalLogootSOp.length > 0) {
-		Utils.pushAll(temp, this.bufferLocalLogootSOp);
-		this.emit('operations', temp);
-		Utils.pushAll(this.bufferLogootSOp, this.bufferLocalLogootSOp);
-	}
-
-	Utils.pushAll(this.bufferLogootSOp, json.logootSOperations);
-	this.bufferLocalLogootSOp = [];
+	Utils.pushAll(this.bufferLogootSOp, json.bufferLogootSOp);
 
 	this.emit('initEditor', { str: this.ropes.str, operations: [] });
 	this.emit('updateLastModificationDate', { lastModificationDate: json.lastModificationDate });
@@ -696,6 +750,12 @@ Coordinator.prototype.join = function (json) {
 	setInterval(function () {
 		coordinator.cleanBufferLogootSOp();
 	}, 250);
+
+	this.changed = true;
+};
+
+Coordinator.prototype.getHistoryLength = function () {
+	return this.history.length;
 };
 
 Coordinator.prototype.receive = function (logootSOperations) {
@@ -723,6 +783,36 @@ Coordinator.prototype.updateState = function (str, currentState, newState) {
 		}
 	}
 	return str;
+};
+
+Coordinator.prototype.updateDoc = function () {
+	var coordinator = this;
+	var temp;
+
+	if(this.flagDB === false) {
+		this.flagDB = true;
+		this.changed = false;
+		temp = {
+			docID: this.docID,
+			creationDate: this.creationDate,
+			history: this.history,
+			lastModificationDate: this.lastModificationDate,
+			replicaNumber: this.replicaNumber,
+			clock: this.clock,
+			ropes: this.ropes,
+			bufferLocalLogootSOp: this.bufferLocalLogootSOp
+		};
+
+		this.serverDB.models.query()
+		.filter('docID', temp.docID)
+		.modify({ replicaNumber: temp.replicaNumber, ropes: temp.ropes, history: temp.history, lastModificationDate: temp.lastModificationDate, clock: temp.clock, bufferLocalLogootSOp: temp.bufferLocalLogootSOp })
+		.execute()
+		.done(function (results) {
+			console.log('MàJé :p');
+			coordinator.flagDB = false;
+		});
+	}
+	
 };
 
 module.exports = Coordinator;
@@ -782,6 +872,7 @@ SocketIOAdapter.prototype.init = function(data) {
     });
 
     this.socket.on('broadcastOps', function (data) {
+        console.log('On a reçu :', data);
         socketIOAdapter.emit('receiveOps', data);
     });
 
@@ -789,7 +880,11 @@ SocketIOAdapter.prototype.init = function(data) {
         socketIOAdapter.emit('receiveInfosUsers', data);
     });
 
-    this.socket.emit('joinDoc', data);
+    this.socket.emit('joinDoc', data, function (result) {
+        if(result.error === false) {
+            socketIOAdapter.emit('ack', { length: result.length });
+        }
+    });
 };
 
 SocketIOAdapter.prototype.send = function (logootSOperations) {
@@ -798,10 +893,11 @@ SocketIOAdapter.prototype.send = function (logootSOperations) {
         "logootSOperations": logootSOperations,
         "lastModificationDate": new Date()
     };
+    console.log('On envoie :  ', obj);
     if(this.socket.socket.connected === true) {
         this.socket.emit('sendOps', obj, function (result) {
             if(result.error === false) {
-                socketIOAdapter.emit('ack', {length: result.length});
+                socketIOAdapter.emit('ack', { length: result.length });
             }
         });
     }
