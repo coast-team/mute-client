@@ -68,7 +68,29 @@ var AceEditorAdapter = function (itemID, coordinator) {
 	this.editor.getSession().setTabSize(4);
 	this.editor.getSession().setUseWrapMode(true);
 
-	this.switchToEditionMode();
+	this.editor.on('changeSelection', function () {
+		aceEditorAdapter.userInfosChanged = true;
+	});
+
+	this.editor.on('mousemove', function (e) {
+		aceEditorAdapter.mousePos = aceEditorAdapter.editor.renderer.screenToTextCoordinates(e.clientX, e.clientY);
+		aceEditorAdapter.updateVisibleNames();
+	});
+
+	if(this.coordinator !== null) {
+		this.coordinator.on('initEditor', function (data) {
+			aceEditorAdapter.init(data);
+		});
+		this.coordinator.on('update', function (data) {
+			aceEditorAdapter.update(data);
+		});
+	}
+
+	this.toEditionMode();
+
+	this.editor.session.on('changeScrollTop', function (e) {
+		aceEditorAdapter.emit('scroll', { topRow: aceEditorAdapter.editor.renderer.getScrollTopRow() });
+    });
 };
 
 AceEditorAdapter.prototype.__proto__ = events.EventEmitter.prototype;
@@ -274,44 +296,25 @@ AceEditorAdapter.prototype.updateVisibleNames = function () {
 	}
 };
 
-AceEditorAdapter.prototype.switchToHistoryMode = function () {
-	//this.removeAllListeners();
+AceEditorAdapter.prototype.toHistoryMode = function () {
 	this.editor.removeAllListeners('change');
-	//this.editor.removeListener('change');// mousemove change changeScrollTop');
-	//this.coordinator.off();
+	this.coordinator.removeAllListeners('update');
 	this.editor.setReadOnly(true);
 };
 
-AceEditorAdapter.prototype.switchToEditionMode = function () {
+AceEditorAdapter.prototype.toEditionMode = function () {
 	var aceEditorAdapter = this;
-
-	this.editor.on('changeSelection', function () {
-		aceEditorAdapter.userInfosChanged = true;
-	});
-
-	this.editor.on('mousemove', function (e) {
-		aceEditorAdapter.mousePos = aceEditorAdapter.editor.renderer.screenToTextCoordinates(e.clientX, e.clientY);
-		aceEditorAdapter.updateVisibleNames();
-	});
-
-	if(this.coordinator !== null) {
-		this.coordinator.on('initEditor', function (data) {
-			aceEditorAdapter.init(data);
-		});
-		this.coordinator.on('update', function (data) {
-			aceEditorAdapter.update(data);
-		});
-	}
 
 	this.editor.on('change', function (e) {
 		aceEditorAdapter.onChangeAdapter(e);
 	});
 
-	this.editor.session.on('changeScrollTop', function (e) {
-		aceEditorAdapter.emit('scroll', { topRow: aceEditorAdapter.editor.renderer.getScrollTopRow() });
-    });
-    this.editor.setReadOnly(false);
-
+	if(this.coordinator !== null && this.coordinator !== undefined) {
+		this.coordinator.on('update', function (data) {
+			aceEditorAdapter.update(data);
+		});	
+	}
+	this.editor.setReadOnly(false);
 };
 
 module.exports = AceEditorAdapter;
@@ -335,6 +338,9 @@ module.exports = AceEditorAdapter;
  *  along with Mute-client.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+var ONLINE_MODE = 0;
+var OFFLINE_MODE = 1;
+
 var Utils = _dereq_('mute-utils');
 var events = _dereq_('events');
 
@@ -354,6 +360,7 @@ var Coordinator = function (docID, serverDB) {
 	this.clock = 0;
 	this.ropes = null;
 	this.bufferLocalLogootSOp = []; // Buffer contenant les LogootSOperations locales actuellement non ack
+	this.mode = ONLINE_MODE;
 	// --------------------------------
 
 	this.changed = false;
@@ -381,9 +388,9 @@ Coordinator.prototype.__proto__ = events.EventEmitter.prototype;
 Coordinator.prototype.init = function () {
 	var coordinator = this;
 	var callback = function () {
-		if(coordinator.network !== null) {
+		if(coordinator.mode === ONLINE_MODE) {
 			// Wait for the server's current version
-			coordinator.emit('initNetwork', { docID: coordinator.docID, replicaNumber: coordinator.replicaNumber, bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp });
+			coordinator.emit('initNetwork');
 		}
 		else {
 			// Allow the user to edit the document offline
@@ -406,7 +413,8 @@ Coordinator.prototype.init = function () {
 				replicaNumber: coordinator.replicaNumber,
 				clock: coordinator.clock,
 				ropes: coordinator.ropes,
-				bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp
+				bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp,
+				mode: ONLINE_MODE
 			};
 			coordinator.serverDB.models.add(doc)
 			.done(function (item) {
@@ -423,6 +431,7 @@ Coordinator.prototype.init = function () {
 			coordinator.clock = doc.clock;
 			coordinator.ropes = doc.ropes;
 			coordinator.bufferLocalLogootSOp = doc.bufferLocalLogootSOp;
+			coordinator.mode = doc.mode;
 			callback();
 		}
 	});
@@ -472,6 +481,10 @@ Coordinator.prototype.setNetwork = function (network) {
 			coordinator.changed = true;
 		}
 	});
+	this.network.on('connect', function () {
+		coordinator.emit('toto', { docID: coordinator.docID, replicaNumber: coordinator.replicaNumber, bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp });
+	});
+
 	this.network.on('receiveInfosUsers', function (data) {
 		delete data.infosUsers[coordinator.ropes.replicaNumber];
 		coordinator.emit('updateRemoteIndicators', data);
@@ -653,6 +666,7 @@ Coordinator.prototype.cleanBufferLogootSOp = function () {
 			});
 		}
 		this.emit('updateLastModificationDate', { lastModificationDate: new Date() });
+		this.emit('updateHistoryScrollerRange', { length: this.history.length });
 		this.changed = true;
 	}
 };
@@ -732,7 +746,8 @@ Coordinator.prototype.join = function (json) {
 
 	this.emit('initEditor', { str: this.ropes.str, operations: [] });
 	this.emit('updateLastModificationDate', { lastModificationDate: json.lastModificationDate });
-	this.emit('updateHistoryScroller', { length: json.history.length });
+	this.emit('updateHistoryScrollerRange', { length: this.history.length });
+	this.emit('updateHistoryScrollerValue', { length: this.history.length });
 
 	/**
 	 * Ajout de la fonction générant des TextOperations à partir des saisies de l'utilisateur
@@ -812,7 +827,31 @@ Coordinator.prototype.updateDoc = function () {
 			coordinator.flagDB = false;
 		});
 	}
-	
+};
+
+Coordinator.prototype.toOnlineMode = function () {
+	var coordinator = this;
+
+	this.mode = ONLINE_MODE;
+
+	this.serverDB.models.query()
+	.filter('docID', this.docID)
+	.modify({ mode: ONLINE_MODE })
+	.execute()
+	.done(function (results) {
+		coordinator.emit('initNetwork');
+	});
+};
+
+Coordinator.prototype.toOfflineMode = function () {
+	this.mode = OFFLINE_MODE;
+	this.serverDB.models.query()
+	.filter('docID', this.docID)
+	.modify({ mode: OFFLINE_MODE })
+	.execute()
+	.done(function (results) {
+		coordinator.emit('disconnect');
+	});
 };
 
 module.exports = Coordinator;
@@ -845,22 +884,22 @@ var SocketIOAdapter = function (coordinator) {
     this.socket = null;
 
     this.coordinator.on('initNetwork', function (data) {
-        socketIOAdapter.init(data);
-    });
-    this.coordinator.on('operations', function (logootSOperations) {
-        socketIOAdapter.send(logootSOperations);
+        socketIOAdapter.toOnlineMode();
     });
 
-    this.coordinator.on('infosUser', function (data) {
-        socketIOAdapter.socket.emit('sendInfosUser', data);
+    this.coordinator.on('toto', function (data) {
+        socketIOAdapter.socket.emit('joinDoc', data, function (result) {
+            if(result.error === false) {
+                socketIOAdapter.emit('ack', { length: result.length });
+            }
+        });
     });
 };
 
 SocketIOAdapter.prototype.__proto__ = events.EventEmitter.prototype;
 
-SocketIOAdapter.prototype.init = function(data) {
+SocketIOAdapter.prototype.createSocket = function () {
     var socketIOAdapter = this;
-
     var connOptions = {
         'sync disconnect on unload': true
     };
@@ -879,11 +918,46 @@ SocketIOAdapter.prototype.init = function(data) {
         socketIOAdapter.emit('receiveInfosUsers', data);
     });
 
-    this.socket.emit('joinDoc', data, function (result) {
-        if(result.error === false) {
-            socketIOAdapter.emit('ack', { length: result.length });
-        }
+    this.socket.on('broadcastParole', function (data) {
+        socketIOAdapter.emit('receiveParole', data);
+    }); 
+
+    this.coordinator.on('infosUser', function (data) {
+        socketIOAdapter.socket.emit('sendInfosUser', data);
     });
+
+    this.coordinator.on('operations', function (logootSOperations) {
+        socketIOAdapter.send(logootSOperations);
+    });
+
+    this.coordinator.on('disconnect', function () {
+        socketIOAdapter.toOfflineMode();
+    });
+
+    this.socket.on('connect', function () {
+         socketIOAdapter.emit('connect');
+    });
+
+    this.socket.on('disconnect', function () {
+        socketIOAdapter.emit('disconnect');
+    });
+};
+
+SocketIOAdapter.prototype.toOnlineMode = function () {
+    if(this.socket === null) {
+        // First time we connect to the server
+        this.createSocket();
+    }
+    else {
+        // We switch from offline mode to online
+        this.socket.socket.connect();
+    }
+};
+
+SocketIOAdapter.prototype.toOfflineMode = function () {
+    if(this.socket !== null && this.socket !== undefined) {
+        this.socket.disconnect();
+    }
 };
 
 SocketIOAdapter.prototype.send = function (logootSOperations) {
