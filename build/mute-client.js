@@ -485,6 +485,10 @@ Coordinator.prototype.setNetwork = function (network) {
 		coordinator.emit('toto', { docID: coordinator.docID, replicaNumber: coordinator.replicaNumber, bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp });
 	});
 
+	this.network.on('disconnect', function () {
+		coordinator.emit('updateRemoteIndicators', {});
+	});
+
 	this.network.on('receiveInfosUsers', function (data) {
 		delete data.infosUsers[coordinator.ropes.replicaNumber];
 		coordinator.emit('updateRemoteIndicators', data);
@@ -3134,7 +3138,7 @@ module.exports = {
 			if(typeof arr[i] === "number" || typeof arr[i] === "string") {
 				copy.push(arr[i]);
 			}
-			else if(arr[i].copy !== null && arr[i].copy !== undefined) {
+			else if(arr[i] !== null && arr[i] !== undefined && arr[i].copy !== null && arr[i].copy !== undefined) {
 				copy.push(arr[i].copy());
 			}
 			else {
