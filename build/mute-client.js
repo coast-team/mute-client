@@ -886,7 +886,7 @@ var SocketIOAdapter = function (coordinator) {
 
     this.coordinator = coordinator;
     this.socket = null;
-
+    this.connectionCreated = false;
     this.coordinator.on('initNetwork', function (data) {
         socketIOAdapter.toOnlineMode();
     });
@@ -942,6 +942,10 @@ SocketIOAdapter.prototype.createSocket = function () {
          socketIOAdapter.emit('connect');
     });
 
+    this.socket.on('reconnect', function () {
+         socketIOAdapter.emit('connect');
+    });
+
     this.socket.on('disconnect', function () {
         socketIOAdapter.emit('disconnect');
     });
@@ -952,9 +956,13 @@ SocketIOAdapter.prototype.toOnlineMode = function () {
         // First time we connect to the server
         this.createSocket();
     }
-    else {
-        // We switch from offline mode to online
+    else if(this.connectionCreated === false) {
+        // First connexion
+        this.connectionCreate = true;
         this.socket.socket.connect();
+    }
+    else {
+        this.socket.socket.reconnect();
     }
 };
 
