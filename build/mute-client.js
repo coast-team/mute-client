@@ -56,7 +56,7 @@ var AceEditorAdapter = function (itemID, coordinator) {
 	this.currentMarkers = [];
 	this.userInfosChanged = false;
 	this.mousePos = null;
-	this.mode = EDITOR_MODE;
+	this.mode = HISTORY_MODE;
 
 	Range = ace.require('ace/range').Range;
 
