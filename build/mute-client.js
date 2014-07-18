@@ -968,100 +968,6 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
 		infosUsersModule.applyLocalOperation(action, index, text);
 	});
 
-	this.network = network;
-
-	var joinDoc = function (data) {
-		var replicaNumber;
-		var infosUser;
-
-		for(replicaNumber in data.infosUsers) {
-			infosUser = data.infosUsers[replicaNumber];
-			infosUsersModule.infosUsers[replicaNumber] = {
-				cursorIndex: infosUser.cursorIndex,
-				selections: infosUser.selections,
-				username: infosUser.username
-			};
-		}
-
-		infosUsersModule.network.removeListener('receiveDoc', joinDoc);
-		infosUsersModule.network.on('receiveDoc', reconnectToDoc);
-	};
-
-	var reconnectToDoc = function (data) {
-		var replicaNumber;
-		var infosUser = infosUsersModule.getLocalInfosUser();
-		var temp = {};
-
-		temp[infosUsersModule.replicaNumber] = {
-			cursorIndex: infosUser.cursorIndex,
-			selections: infosUser.selections,
-			username: infosUser.username
-		};
-
-		for(replicaNumber in data.infosUsers) {
-			if(parseInt(replicaNumber) !== parseInt(infosUsersModule.replicaNumber)) {
-				infosUser = data.infosUsers[replicaNumber];
-				temp[replicaNumber] = {
-					cursorIndex: infosUser.cursorIndex,
-					selections: infosUser.selections,
-					username: infosUser.username
-				};
-			}
-		}
-
-		infosUsersModule.infosUsers = temp;
-	};
-
-	network.on('receiveDoc', joinDoc);
-
-	network.on('receiveUserJoin', function (data) {
-		var replicaNumber = data.replicaNumber;
-		var username = data.username;
-
-		infosUsersModule.emit('addCollaborator', data);
-		infosUsersModule.addUser(replicaNumber, username);
-		infosUsersModule.updateRemoteInfosUsers();
-	});
-
-	network.on('receiveUserLeft', function (data) {
-		var replicaNumber = data.replicaNumber;
-
-		infosUsersModule.emit('removeCollaborator', data);
-		infosUsersModule.removeUser(replicaNumber);
-		infosUsersModule.updateRemoteInfosUsers();
-	});
-
-	network.on('changeCollaboratorCursorAndSelections', function (data) {
-		var replicaNumber = data.replicaNumber;
-		var cursorIndex = data.infosUser.cursorIndex;
-		var selections = data.infosUser.selections;
-
-		infosUsersModule.updateCursorAndSelections(replicaNumber, cursorIndex, selections);
-		infosUsersModule.updateRemoteInfosUsers();
-	});
-	/*
-	network.on('changeCollaboratorUsername', function (data) {
-		var replicaNumber = data.replicaNumber;
-		var username = data.username;
-
-		console.log('changeCollaboratorUsername');
-
-		infosUsersModule.updateUsername(replicaNumber, username);
-		infosUsersModule.updateRemoteInfosUsers();
-	});
-	*/
-	/*
-	this.usernameManager = usernameManager;
-
-	usernameManager.on('changeUsername', function (data) {
-		var username = data.username;
-
-		data.replicaNumber = infosUsersModule.replicaNumber;
-		infosUsersModule.emit('changeLocalUsername', data);
-		infosUserModule.updateLocalUsername(username);
-	});
-	*/
-
     editor.on('readOnlyModeOn', function () {
         infosUsersModule.readOnlyMode = true;
         infosUsersModule.emit('updateRemoteIndicators', { infosUsers: {} });
@@ -1072,18 +978,113 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
         infosUsersModule.updateRemoteInfosUsers();
     });
 
-    network.on('connect', function () {
-        infosUsersModule.offlineMode = false;
-        infosUsersModule.updateRemoteInfosUsers();
-    });
+	if(network !== null && network !== undefined) {
+		this.network = network;
 
-    network.on('disconnect', function () {
-        infosUsersModule.offlineMode = true;
-        infosUsersModule.emit('updateRemoteIndicators', { infosUsers: {} });
-        infosUsersModule.emit('updateCollaboratorsList', { infosUsers: {} });
-    });
+		var joinDoc = function (data) {
+			var replicaNumber;
+			var infosUser;
 
+			for(replicaNumber in data.infosUsers) {
+				infosUser = data.infosUsers[replicaNumber];
+				infosUsersModule.infosUsers[replicaNumber] = {
+					cursorIndex: infosUser.cursorIndex,
+					selections: infosUser.selections,
+					username: infosUser.username
+				};
+			}
 
+			infosUsersModule.network.removeListener('receiveDoc', joinDoc);
+			infosUsersModule.network.on('receiveDoc', reconnectToDoc);
+		};
+
+		var reconnectToDoc = function (data) {
+			var replicaNumber;
+			var infosUser = infosUsersModule.getLocalInfosUser();
+			var temp = {};
+
+			temp[infosUsersModule.replicaNumber] = {
+				cursorIndex: infosUser.cursorIndex,
+				selections: infosUser.selections,
+				username: infosUser.username
+			};
+
+			for(replicaNumber in data.infosUsers) {
+				if(parseInt(replicaNumber) !== parseInt(infosUsersModule.replicaNumber)) {
+					infosUser = data.infosUsers[replicaNumber];
+					temp[replicaNumber] = {
+						cursorIndex: infosUser.cursorIndex,
+						selections: infosUser.selections,
+						username: infosUser.username
+					};
+				}
+			}
+
+			infosUsersModule.infosUsers = temp;
+		};
+
+		network.on('receiveDoc', joinDoc);
+
+		network.on('receiveUserJoin', function (data) {
+			var replicaNumber = data.replicaNumber;
+			var username = data.username;
+
+			infosUsersModule.emit('addCollaborator', data);
+			infosUsersModule.addUser(replicaNumber, username);
+			infosUsersModule.updateRemoteInfosUsers();
+		});
+
+		network.on('receiveUserLeft', function (data) {
+			var replicaNumber = data.replicaNumber;
+
+			infosUsersModule.emit('removeCollaborator', data);
+			infosUsersModule.removeUser(replicaNumber);
+			infosUsersModule.updateRemoteInfosUsers();
+		});
+
+		network.on('changeCollaboratorCursorAndSelections', function (data) {
+			var replicaNumber = data.replicaNumber;
+			var cursorIndex = data.infosUser.cursorIndex;
+			var selections = data.infosUser.selections;
+
+			infosUsersModule.updateCursorAndSelections(replicaNumber, cursorIndex, selections);
+			infosUsersModule.updateRemoteInfosUsers();
+		});
+		/*
+		network.on('changeCollaboratorUsername', function (data) {
+			var replicaNumber = data.replicaNumber;
+			var username = data.username;
+
+			console.log('changeCollaboratorUsername');
+
+			infosUsersModule.updateUsername(replicaNumber, username);
+			infosUsersModule.updateRemoteInfosUsers();
+		});
+		*/
+		/*
+		this.usernameManager = usernameManager;
+
+		usernameManager.on('changeUsername', function (data) {
+			var username = data.username;
+
+			data.replicaNumber = infosUsersModule.replicaNumber;
+			infosUsersModule.emit('changeLocalUsername', data);
+			infosUserModule.updateLocalUsername(username);
+		});
+		*/
+
+	    network.on('connect', function () {
+	        infosUsersModule.offlineMode = false;
+	        infosUsersModule.updateRemoteInfosUsers();
+	    });
+
+	    network.on('disconnect', function () {
+	        infosUsersModule.offlineMode = true;
+	        infosUsersModule.emit('updateRemoteIndicators', { infosUsers: {} });
+	        infosUsersModule.emit('updateCollaboratorsList', { infosUsers: {} });
+	    });
+	}
+	
 	this.serverDB = serverDB;
 };
 
