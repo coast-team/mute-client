@@ -15,10 +15,11 @@
  *	along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-var LogootS = {
+var Mute = {
 	Coordinator: require('./lib/coordinator'),
     SocketIOAdapter: require('./lib/socket-io-adapter'),
-    AceEditorAdapter: require('./lib/ace-editor-adapter')
+    AceEditorAdapter: require('./lib/ace-editor-adapter'),
+    InfosUsersModule: require('./lib/infos-users')
 };
 
-module.exports = LogootS;
+module.exports = Mute;

@@ -16,14 +16,15 @@
  *	along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-var LogootS = {
+var Mute = {
 	Coordinator: _dereq_('./lib/coordinator'),
     SocketIOAdapter: _dereq_('./lib/socket-io-adapter'),
-    AceEditorAdapter: _dereq_('./lib/ace-editor-adapter')
+    AceEditorAdapter: _dereq_('./lib/ace-editor-adapter'),
+    InfosUsersModule: _dereq_('./lib/infos-users')
 };
 
-module.exports = LogootS;
-},{"./lib/ace-editor-adapter":2,"./lib/coordinator":3,"./lib/socket-io-adapter":4}],2:[function(_dereq_,module,exports){
+module.exports = Mute;
+},{"./lib/ace-editor-adapter":2,"./lib/coordinator":3,"./lib/infos-users":4,"./lib/socket-io-adapter":5}],2:[function(_dereq_,module,exports){
 /*
  *	Copyright 2014 Matthieu Nicolas
  *
@@ -56,12 +57,16 @@ var AceEditorAdapter = function (itemID, coordinator) {
 	this.currentMarkers = [];
 	this.userInfosChanged = false;
 	this.mousePos = null;
-	this.mode = HISTORY_MODE;
+	this.mode = -1;
+	this.flag = false;
+	this.lastCursorIndex = 0;
+	this.previousLine = 0;
+	this.userInfosUpdateTimeout = null;
 
 	Range = ace.require('ace/range').Range;
 
 	style.type = 'text/css';
-	style.innerHTML = '.editor { margin-left: 15px; margin-top: 15px; width: 100%; height: 400px; overflow: visible}';
+	style.innerHTML = '.editor { margin-left: 15px; margin-top: 15px; width: 991px; height: 579px; overflow: visible}';
 	document.getElementsByTagName('head')[0].appendChild(style);
 
 	document.getElementById(itemID).className = 'editor';
@@ -72,68 +77,60 @@ var AceEditorAdapter = function (itemID, coordinator) {
 	this.editor.getSession().setTabSize(4);
 	this.editor.getSession().setUseWrapMode(true);
 
-	this.editor.on('changeSelection', function () {
-		aceEditorAdapter.userInfosChanged = true;
-	});
-
-	this.editor.on('mousemove', function (e) {
-		aceEditorAdapter.mousePos = aceEditorAdapter.editor.renderer.screenToTextCoordinates(e.clientX, e.clientY);
-		aceEditorAdapter.updateVisibleNames();
-	});
-
 	if(this.coordinator !== null) {
 		this.coordinator.on('initEditor', function (data) {
 			aceEditorAdapter.init(data);
 		});
-		this.coordinator.on('update', function (data) {
-			aceEditorAdapter.update(data);
-		});
 	}
-
-	this.toEditionMode();
 
 	this.editor.session.on('changeScrollTop', function (e) {
 		aceEditorAdapter.emit('scroll', { topRow: aceEditorAdapter.editor.renderer.getScrollTopRow() });
     });
+
+    this.editor.focus();
 };
 
 AceEditorAdapter.prototype.__proto__ = events.EventEmitter.prototype;
 
-AceEditorAdapter.prototype.init = function (data) {
-	var aceEditorAdapter = this;
-	var flag = false;
-	this.update(data);
+AceEditorAdapter.prototype.setInfosUsersModule = function (infosUsersModule) {
+	var editor = this;
 
-	setInterval(function () {
-		var index;// = aceEditorAdapter.editor.session.doc.positionToIndex(aceEditorAdapter.editor.getCursorPosition());
-		var aceSelections;// = aceEditorAdapter.editor.session.getSelection();
-		var i;
-		var selections = [];
-		var indexStart;
-		var indexEnd;
+	this.infosUsersModule = infosUsersModule;
+}
 
-		if(flag === false && aceEditorAdapter.userInfosChanged === true) {
-			index = aceEditorAdapter.editor.session.doc.positionToIndex(aceEditorAdapter.editor.getCursorPosition());
-			aceSelections = aceEditorAdapter.editor.session.getSelection();
-			flag = true;
-			if(aceSelections !== null && aceSelections !== undefined && !aceSelections.isEmpty()) {
-				if(!aceSelections.inMultiSelectMode) {
-					if(aceSelections.isBackwards()) {
-						indexStart = aceEditorAdapter.editor.session.doc.positionToIndex(aceSelections.lead);
-						indexEnd = aceEditorAdapter.editor.session.doc.positionToIndex(aceSelections.anchor);
-					}
-					else {
-						indexStart = aceEditorAdapter.editor.session.doc.positionToIndex(aceSelections.anchor);
-						indexEnd = aceEditorAdapter.editor.session.doc.positionToIndex(aceSelections.lead);
-					}
-					selections.push({ start: indexStart, end: indexEnd });
-				}
+AceEditorAdapter.prototype.init = function (data) {	
+	this.toHistoryMode();
+	this.editor.setValue(data.str);	
+	this.updateInfosUser();
+	this.toEditionMode();
+	this.infosUsersModule.updateRemoteInfosUsers();
+};
+
+AceEditorAdapter.prototype.sendUserInfos = function () {
+	var doc = this.editor.session.doc;
+	var index;
+	var aceSelections;
+	var i;
+	var selections = [];
+	var indexStart;
+	var indexEnd;
+
+	index = doc.positionToIndex(this.editor.getCursorPosition());
+	aceSelections = this.editor.session.getSelection();
+	if(aceSelections !== null && aceSelections !== undefined && !aceSelections.isEmpty()) {
+		if(!aceSelections.inMultiSelectMode) {
+			if(aceSelections.isBackwards()) {
+				indexStart = doc.positionToIndex(aceSelections.lead);
+				indexEnd = doc.positionToIndex(aceSelections.anchor);
 			}
-			aceEditorAdapter.emit('infosUser', { infosUser: { indexCursor: index, selections: selections } });
-			aceEditorAdapter.userInfosChanged = false;
-			flag = false;
+			else {
+				indexStart = doc.positionToIndex(aceSelections.anchor);
+				indexEnd = doc.positionToIndex(aceSelections.lead);
+			}
+			selections.push({ start: indexStart, end: indexEnd });
 		}
-	}, 250);
+	}
+	this.emit('changeCursorAndSelections', { infosUser: { cursorIndex: index, selections: selections } });
 };
 
 AceEditorAdapter.prototype.onChangeAdapter = function (e) {
@@ -155,8 +152,9 @@ AceEditorAdapter.prototype.onChangeAdapter = function (e) {
     	action = data.action;
     	text = data.text; 
     }
-
-    this.emit('change', { action: action, index: index, text: text });
+    this.emit('localOperation', { operation: { action: action, index: index, text: text }});
+    this.infosUsersModule.updateRemoteInfosUsers();
+    //this.emit('testMicro', { infosUser: { action: action, index: index, text: text }});
 };
 
 AceEditorAdapter.prototype.update = function (data) {
@@ -170,76 +168,27 @@ AceEditorAdapter.prototype.update = function (data) {
 	 * 	}
 	 */
 
+	var aceEditorAdapter = this;
+
 	var doc = this.editor.session.doc;
-	var index = this.editor.session.doc.positionToIndex(this.editor.getCursorPosition());
-	var selection = this.editor.getSelection();
-	var indexStartSelection;
-	var indexEndSelection;
-	var posStartSelection;
-	var posEndSelection;
-	var ranges = [];
-	var selectionTemp;
 	var topRow = this.editor.renderer.getScrollTopRow() + data.diffNbLines;
-	var totalDiffCursor = 0;
 	var i, j;
-	var pos; 
-	var operation;
+	
+	this.editor.removeAllListeners('change');
 
+	this.editor.setValue(data.str);
 
-	for(i=0; i<data.operations.length; i++) {
-		operation = data.operations[i];
-		if(operation.offset < index) {
-			index += operation.diffCursor;
-		}
-	}
+	this.updateInfosUser();
 
-	if(!selection.isEmpty()) {
-		if(!selection.inMultiSelectMode) {
-			if(selection.isBackwards()) {
-				indexStartSelection = doc.positionToIndex(selection.lead);
-				indexEndSelection = doc.positionToIndex(selection.anchor);
-			}
-			else {
-				indexStartSelection = doc.positionToIndex(selection.anchor);
-				indexEndSelection = doc.positionToIndex(selection.lead);
-			}
-			ranges.push(this.updateSelection(indexStartSelection, indexEndSelection, data.operations));
-		}
-	}
-	this.editor.setValue(data.str);	
+	// Update the collaborators' infos
+	this.infosUsersModule.updateRemoteInfosUsers();
 
-	pos = this.editor.session.doc.indexToPosition(index, 0)
-	this.editor.navigateTo(pos.row, pos.column);
-
-	selection.ranges = [];
-	selection.rangeCount = 0;
-	for(i=0; i<ranges.length; i++) {
-		posStartSelection = doc.indexToPosition(ranges[i][0]);
-		posEndSelection = doc.indexToPosition(ranges[i][1]);
-
-		selection.setSelectionRange(new Range(posStartSelection.row, posStartSelection.column, posEndSelection.row, posEndSelection.column));
-	}
+	this.editor.on('change', function (e) {
+		aceEditorAdapter.onChangeAdapter(e);
+	});
 
 	this.editor.renderer.scrollToLine(topRow, false, true);
-
-	this.userInfosChanged = true;
 };
-
-AceEditorAdapter.prototype.updateSelection = function (indexStart, indexEnd, operations) {
-	var i;
-
-	for(i=0; i<operations.length; i++) {
-		operation = operations[i];
-		if(operation.offset < indexStart) {
-			indexStart += operation.diffCursor;
-		}
-		if(operation.offset < indexEnd) {
-			indexEnd += operation.diffCursor;
-		}
-	}
-
-	return [indexStart, indexEnd];
-}
 
 AceEditorAdapter.prototype.clearRemoteIndicators = function () {
 	var i;
@@ -249,17 +198,13 @@ AceEditorAdapter.prototype.clearRemoteIndicators = function () {
 	}
 };
 
-AceEditorAdapter.prototype.addRemoteCursor = function (indexCursor, userID, cssClasses) {
-	var posCursor = this.editor.session.doc.indexToPosition(indexCursor);
+AceEditorAdapter.prototype.addRemoteCursor = function (cursorIndex, cursorHTML) {
+	var posCursor = this.editor.session.doc.indexToPosition(cursorIndex);
 	var range = new Range(posCursor.row, posCursor.column, posCursor.row, posCursor.column+1);
 
 	this.currentMarkers.push(this.editor.session.addMarker(range, '', function (html, range, left, top, config) {
-		var div = '<div id="cursor-'+userID+'" data-remote-cursor="true" data-remote-cursor-row="'+posCursor.row+'" data-remote-cursor-column="'+posCursor.column+'" class="'+cssClasses+'" style="height: 12px; width:300px; top:'+(top)+'px; left:'+left+'px;">'+
-			'<div class="nubbin" style="bottom: '+0+'px; top:-4px;"></div>'+
-			'<div class="name" style="display: none; bottom: 4px">Utilisateur '+userID+'</div>' +
-			'</div>';
-		html.push(div);
-		return html;
+		var finalCursorHTML = cursorHTML.replace('top:FLAG_TOP', 'top:'+top).replace('left:FLAG_LEFT', 'left:'+left);
+		return html.push(finalCursorHTML);
 	}, true));
 };
 
@@ -301,18 +246,23 @@ AceEditorAdapter.prototype.updateVisibleNames = function () {
 };
 
 AceEditorAdapter.prototype.toHistoryMode = function () {
-	if(this.mode === EDITOR_MODE) {
+	if(this.mode !== HISTORY_MODE) {
+		this.previousLine = parseInt(this.editor.renderer.getScrollTopRow());
 		this.editor.removeAllListeners('change');
+		this.editor.removeAllListeners('changeSelection');
+		this.editor.removeAllListeners('mousemove');
 		this.coordinator.removeAllListeners('update');
 		this.editor.setReadOnly(true);
+		this.emit('readOnlyModeOn');
 		this.mode = HISTORY_MODE;
 	}
 };
 
 AceEditorAdapter.prototype.toEditionMode = function () {
 	var aceEditorAdapter = this;
+	var pos;
 
-	if(this.mode === HISTORY_MODE) {
+	if(this.mode !== EDITOR_MODE) {
 		this.editor.on('change', function (e) {
 			aceEditorAdapter.onChangeAdapter(e);
 		});
@@ -322,8 +272,32 @@ AceEditorAdapter.prototype.toEditionMode = function () {
 				aceEditorAdapter.update(data);
 			});	
 		}
+
+		this.editor.on('changeSelection', function (e) {
+			aceEditorAdapter.lastCursorIndex = aceEditorAdapter.editor.session.doc.positionToIndex(aceEditorAdapter.editor.getCursorPosition());
+			if(aceEditorAdapter.userInfosUpdateTimeout === null) {
+				aceEditorAdapter.userInfosUpdateTimeout = setTimeout(function () {
+					aceEditorAdapter.sendUserInfos();
+					aceEditorAdapter.userInfosUpdateTimeout = null;
+				}, 1000);
+			};
+			aceEditorAdapter.userInfosChanged = true;
+		});
+
+		this.editor.on('mousemove', function (e) {
+			aceEditorAdapter.mousePos = aceEditorAdapter.editor.renderer.screenToTextCoordinates(e.clientX, e.clientY);
+			aceEditorAdapter.updateVisibleNames();
+		});
+
+		pos = this.editor.session.doc.indexToPosition(this.lastCursorIndex, 0)
+		this.editor.navigateTo(pos.row, pos.column);
+		this.editor.scrollToRow(this.previousLine);
+
 		this.editor.setReadOnly(false);
+		this.emit('readOnlyModeOff');
 		this.mode = EDITOR_MODE;
+
+		this.editor.focus();
 	}
 };
 
@@ -335,8 +309,50 @@ AceEditorAdapter.prototype.isInEditorMode = function () {
 	return this.mode === EDITOR_MODE;
 };
 
+AceEditorAdapter.prototype.indexToPosition = function (index) {
+	return this.editor.session.doc.indexToPosition(index, 0);
+};
+
+AceEditorAdapter.prototype.disable = function () {
+	this.editor.removeAllListeners('change');
+	this.editor.removeAllListeners('changeSelection');
+	this.editor.removeAllListeners('mousemove');
+	
+	this.editor.session.removeAllListeners('changeScrollTop');
+
+	this.coordinator.removeAllListeners('update');
+	this.coordinator.removeAllListeners('initEditor');
+
+	this.coordinator = null;
+
+	this.editor.setReadOnly(true);
+	this.emit('readOnlyModeOn');
+};
+
+AceEditorAdapter.prototype.updateInfosUser = function () {
+	var doc = this.editor.session.doc;
+	var infosUser = this.infosUsersModule.getLocalInfosUser();
+	var selection = this.editor.getSelection();
+	var posStartSelection;
+	var posEndSelection;
+	var pos;
+
+	// Update the user's cursor's index and the current text selected
+	pos = doc.indexToPosition(infosUser.cursorIndex, 0);
+	this.editor.navigateTo(pos.row, pos.column);
+
+	selection.ranges = [];
+	selection.rangeCount = 0;
+	for(i=0; i<infosUser.selections.length; i++) {
+		posStartSelection = doc.indexToPosition(infosUser.selections[i].start);
+		posEndSelection = doc.indexToPosition(infosUser.selections[i].end);
+
+		selection.setSelectionRange(new Range(posStartSelection.row, posStartSelection.column, posEndSelection.row, posEndSelection.column));
+	}
+};
+
 module.exports = AceEditorAdapter;
-},{"events":5}],3:[function(_dereq_,module,exports){
+},{"events":6}],3:[function(_dereq_,module,exports){
 /*
  *	Copyright 2014 Matthieu Nicolas
  *
@@ -369,6 +385,8 @@ var LogootSAdd = _dereq_('mute-structs').LogootSAdd;
 var LogootSDel = _dereq_('mute-structs').LogootSDel;
 
 var Coordinator = function (docID, serverDB) {
+	var coordinator = this;
+
 	// Attributes stored into the DB
 	this.docID = docID;
 	this.creationDate = new Date();
@@ -394,11 +412,22 @@ var Coordinator = function (docID, serverDB) {
 	this.busy = false;		// Flag indiquant si l'utilisateur a saisi qqch depuis 1 sec
 	this.flag = false;		// Flag évitant d'appeler simultanément plusieurs fois la même fonction
 	
-
 	this.network = null;
 	this.editor = null;
 	this.timerTextOp = null;
 	this.serverDB = serverDB;
+
+	this.updateLastModificationDateTimeout = null;
+
+	this.localOperationHandler = function (data) {
+		var action = data.operation.action;
+		var index = data.operation.index;
+		var text = data.operation.text;
+		
+		coordinator.addBufferTextOp({ action: action, index: index, text: text });
+		coordinator.updateLastModificationDate(new Date().valueOf());
+	};
+
 };
 
 Coordinator.prototype.__proto__ = events.EventEmitter.prototype;
@@ -406,7 +435,7 @@ Coordinator.prototype.__proto__ = events.EventEmitter.prototype;
 Coordinator.prototype.init = function () {
 	var coordinator = this;
 	var callback = function () {
-		if(coordinator.mode === ONLINE_MODE) {
+		if(coordinator.mode === ONLINE_MODE && coordinator.network !== null && coordinator.network !== undefined) {
 			// Wait for the server's current version
 			coordinator.emit('initNetwork');
 		}
@@ -432,7 +461,7 @@ Coordinator.prototype.init = function () {
 				clock: coordinator.clock,
 				ropes: coordinator.ropes,
 				bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp,
-				mode: ONLINE_MODE
+				mode: ONLINE_MODE,
 			};
 			coordinator.serverDB.models.add(doc)
 			.done(function (item) {
@@ -465,19 +494,12 @@ Coordinator.prototype.setEditor = function (editor) {
 	var coordinator = this;
 
 	this.editor = editor;
-	this.editor.on('change', function (data) {
-		coordinator.addBufferTextOp(data);
-		coordinator.emit('updateLastModificationDate', { lastModificationDate: new Date()});
-	});
+
 	this.editor.on('cursor', function (posCursor) {
 		coordinator.posCursor = posCursor;
 	});
 	this.editor.on('scroll', function (viewTopRow) {
 		coordinator.viewTopRow = viewTopRow; 
-	});
-
-	this.editor.on('infosUser', function (data) {
-		coordinator.emit('infosUser', data);
 	});
 };
 
@@ -487,6 +509,7 @@ Coordinator.prototype.setNetwork = function (network) {
 	var replicaNumber;
 
 	this.network = network;
+
 	this.network.on('receiveDoc', function (args) {
 		coordinator.join(args);
 	});
@@ -500,17 +523,8 @@ Coordinator.prototype.setNetwork = function (network) {
 		}
 	});
 	this.network.on('connect', function () {
-		coordinator.emit('toto', { docID: coordinator.docID, replicaNumber: coordinator.replicaNumber, bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp });
+		coordinator.emit('queryDoc', { docID: coordinator.docID, replicaNumber: coordinator.replicaNumber, bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp });
 	});
-
-	this.network.on('disconnect', function () {
-		coordinator.emit('updateRemoteIndicators', {});
-	});
-
-	this.network.on('receiveInfosUsers', function (data) {
-		delete data.infosUsers[coordinator.ropes.replicaNumber];
-		coordinator.emit('updateRemoteIndicators', data);
-	});	
 };
 
 Coordinator.prototype.addBufferTextOp = function (data) {
@@ -628,12 +642,7 @@ Coordinator.prototype.cleanBufferTextOp = function () {
 			this.emit('operations', logootSOperations);
 		}
 
-		/*
-		content = JSON.parse(localStorage[this.docID]);
-		content.clock = this.ropes.clock;
-		*/
 		this.clock = this.ropes.clock;
-		//localStorage[this.docID] = JSON.stringify(content);
 		this.flag = false;
 	}
 };
@@ -648,30 +657,34 @@ Coordinator.prototype.cleanBufferLogootSOp = function () {
 	var operations = [];
 	var res;
 	var diffCursor = 0;
-	var diffNbLines = Utils.occurrences(this.ropes.str, '\n');
+	var diffNbLines = 0;
+	var owner = 0;
 
 	while(!this.busy && this.flag !== true
 		&& this.bufferTextOp.length === 0 && this.bufferLogootSOp.length > 0 ) {
 		this.flag = true;
+		diffNbLines = Utils.occurrences(this.ropes.str, '\n');
 		if(this.editor !== null) {
 			this.editor.removeAllListeners('change');
 		}
 		temp = this.bufferLogootSOp.shift();
+		owner = temp.owner;
 		lo = this.generateLogootSOp(temp);
-		// Chaque LogootSOperation génère un tableau de TextOperations lors de son exécution
+		// Each LogootSOperation generates a TextOperations array when applied
 		tos = lo.execute(this.ropes);
 		for(i=0; i<tos.length; i++)
 		{
 			to = tos[i];
+			to.owner = owner;
 			if(to.length != null && (to.offset != null || to.offset == 0)) {
-				// Deletion
+				// Keep the deleted text for the history
 				to.deletion = this.ropes.str.substr(to.offset, to.length);
 			}
 			this.history.push(to);
-			res = this.applyTextOperation(this.ropes.str, to);
-			this.ropes.str = res.str;
-			diffCursor += res.diffCursor;
-			operations.push({ offset: to.offset, diffCursor: diffCursor });
+			operations.push(to);
+
+			temp = this.applyTextOperation(this.ropes.str, to);
+			this.ropes.str = temp;
 		}
 		diffNbLines = Utils.occurrences(this.ropes.str, '\n') - diffNbLines;
 
@@ -679,15 +692,17 @@ Coordinator.prototype.cleanBufferLogootSOp = function () {
 		this.prevOp = false;
 		this.flag = false;
 
-		this.emit('update', { str: this.ropes.str, operations: operations, diffNbLines: diffNbLines });
-		this.emit('awareness', { nbLogootSOp: this.bufferLogootSOp.length });
+		this.emit('remoteOperations', { operations: operations });
+		this.emit('update', { str: this.ropes.str, diffNbLines: diffNbLines });
+		
+		//this.emit('awareness', { nbLogootSOp: this.bufferLogootSOp.length });
 		if(this.editor !== null) {
 			this.editor.on('change', function (data) {
 				coordinator.addBufferTextOp(data);
-				coordinator.emit('updateLastModificationDate', { lastModificationDate: new Date() });
+				coordinator.updateLastModificationDate(new Date().valueOf());
 			});
 		}
-		this.emit('updateLastModificationDate', { lastModificationDate: new Date() });
+		coordinator.updateLastModificationDate(new Date().valueOf());
 		this.emit('updateHistoryScrollerRange', { length: this.history.length });
 		this.changed = true;
 	}
@@ -711,20 +726,16 @@ Coordinator.prototype.generateLogootSOp = function (temp) {
 };
 
 Coordinator.prototype.applyTextOperation = function (str, to) {
-	var diffCursor = 0;
-
 	// Must identify which type of text operation it is
 	if(to.content !== undefined && to.offset !== undefined && to.content !== null && to.offset !== null) {
 		// Insertion
-		diffCursor = to.content.length;
 		str = Utils.insert(str, to.offset, to.content);
 	}
 	else if(to.length !== undefined && to.length !== null && to.offset !== undefined && to.offset !== null) {
 		// Deletion
-		diffCursor = - to.length;
 		str = Utils.del(str, to.offset, to.offset + to.length - 1);
 	}
-	return { str: str, diffCursor: diffCursor };
+	return str;
 };
 
 Coordinator.prototype.applyReverseTextOperation = function (str, to) {
@@ -742,32 +753,34 @@ Coordinator.prototype.applyReverseTextOperation = function (str, to) {
 Coordinator.prototype.join = function (json) {
 	var coordinator = this;
 
-	var temp = [];
+	var temp;
 	var content;
 
 	json.docID = this.docID;	
 
 	this.replicaNumber = json.replicaNumber;
-	this.lastModificationDate = json.lastModificationDate;
+	this.emit('replicaNumber', { replicaNumber: this.replicaNumber });
+	coordinator.updateLastModificationDate(new Date(json.lastModificationDate).valueOf());
 	this.creationDate = json.creationDate;
 
 	if(this.editor !== null) {
-		this.editor.removeAllListeners('change');
+		this.editor.removeListener('localOperation', this.localOperationHandler);
 	}
 
-	// Have to use a var temp in case of replicating the coordinator's ropes (offline-mode)
-	var temp = new LogootSRopes(this.replicaNumber);
-	temp.copyFromJSON(json.ropes);
-	temp.clock = this.clock;
-	
-	this.ropes = temp;
+	if(json.ropes !== null && json.ropes !== undefined) {
+		// Have to use a var temp in case of replicating the coordinator's ropes (offline-mode)
+		temp = new LogootSRopes(this.replicaNumber);
+		temp.copyFromJSON(json.ropes);
+		temp.clock = this.clock;
+		this.ropes = temp;
+	}
 
 	this.history = json.history;
 
 	Utils.pushAll(this.bufferLogootSOp, json.bufferLogootSOp);
 
-	this.emit('initEditor', { str: this.ropes.str, operations: [] });
-	this.emit('updateLastModificationDate', { lastModificationDate: json.lastModificationDate });
+	this.emit('initEditor', { str: this.ropes.str });
+
 	this.emit('updateHistoryScrollerRange', { length: this.history.length });
 	this.emit('updateHistoryScrollerValue', { length: this.history.length });
 
@@ -775,10 +788,7 @@ Coordinator.prototype.join = function (json) {
 	 * Ajout de la fonction générant des TextOperations à partir des saisies de l'utilisateur
 	 */
 	if(this.editor !== null) {
-		this.editor.on('change', function (data) {
-			coordinator.addBufferTextOp(data);
-			coordinator.emit('updateLastModificationDate', { lastModificationDate: new Date() });
-		});
+		this.editor.on('localOperation', this.localOperationHandler);
 	}
 	setInterval(function () {
 		coordinator.cleanBufferTextOp();
@@ -808,14 +818,14 @@ Coordinator.prototype.updateState = function (str, currentState, newState) {
 	if(newState > currentState) {
 		if(newState <= this.history.length) {
 			for(i=currentState; i<newState; i++) {
-				str = this.applyTextOperation(str, this.history[i]).str;
+				str = this.applyTextOperation(str, this.history[i], false);
 			}	
 		}
 	}
 	else if(newState < currentState) {
 		if(newState > 0) {
 			for(i=currentState-1; i>newState-1; i--) {
-				str = this.applyReverseTextOperation(str, this.history[i]);
+				str = this.applyReverseTextOperation(str, this.history[i], false);
 			}
 		}
 	}
@@ -837,7 +847,7 @@ Coordinator.prototype.updateDoc = function () {
 			replicaNumber: this.replicaNumber,
 			clock: this.clock,
 			ropes: this.ropes,
-			bufferLocalLogootSOp: this.bufferLocalLogootSOp
+			bufferLocalLogootSOp: this.bufferLocalLogootSOp,
 		};
 
 		this.serverDB.models.query()
@@ -853,7 +863,6 @@ Coordinator.prototype.updateDoc = function () {
 
 Coordinator.prototype.toOnlineMode = function () {
 	var coordinator = this;
-
 	this.mode = ONLINE_MODE;
 
 	this.serverDB.models.query()
@@ -876,8 +885,360 @@ Coordinator.prototype.toOfflineMode = function () {
 	});
 };
 
+Coordinator.prototype.updateLastModificationDate = function (dateValue) {
+	var coordinator = this;
+	this.lastModificationDate = dateValue;
+	if(this.updateLastModificationDateTimeout === null) {
+		coordinator.updateLastModificationDateTimeout = setTimeout(function () {
+			coordinator.emit('updateLastModificationDate', { lastModificationDate: coordinator.lastModificationDate });
+			coordinator.updateLastModificationDateTimeout = null;
+		}, 1000);
+	};
+};
+
+Coordinator.prototype.dispose = function () {
+	this.editor.removeAllListeners('localOperation');
+	this.editor.removeAllListeners('cursor');
+	this.editor.removeAllListeners('scroll');
+
+	this.network.removeAllListeners('collaboratorJoin');
+	this.network.removeAllListeners('collaboratorLeave');
+	this.network.removeAllListeners('receiveDoc');
+	this.network.removeAllListeners('receiveOps');
+	this.network.removeAllListeners('ack');
+	this.network.removeAllListeners('connect');
+	this.network.removeAllListeners('disconnect');
+
+	this.network = null;
+	this.editor = null;
+};
+
 module.exports = Coordinator;
-},{"events":5,"mute-structs":6,"mute-utils":22}],4:[function(_dereq_,module,exports){
+},{"events":6,"mute-structs":7,"mute-utils":23}],4:[function(_dereq_,module,exports){
+var events = _dereq_('events');
+
+var InfosUsersModule = function (docID, coordinator, editor, network, usernameManager, serverDB) {
+	var infosUsersModule = this;
+
+	this.docID = docID;
+	this.infosUsers = {};
+	this.replicaNumber = -1;
+	this.updateTimeout = null;
+	this.readOnlyMode = false;
+	this.offlineMode = true;
+
+	this.coordinator = coordinator;
+	
+	// Coordinator provides the replicaNumber
+	coordinator.once('replicaNumber', function (data) {
+		infosUsersModule.replicaNumber = data.replicaNumber;
+		infosUsersModule.infosUsers[data.replicaNumber] = {
+			cursorIndex: 0,
+			selections: [],
+			username: 'User ' + data.replicaNumber
+		};
+	});
+
+	// Coordinator signals the remote operations applied to the model
+	coordinator.on('remoteOperations', function (data) {
+		var operations = data.operations;
+
+		infosUsersModule.applyRemoteOperations(operations);
+	});
+
+	this.editor = editor;
+
+	editor.on('changeCursorAndSelections', function (data) {
+		var cursorIndex = data.infosUser.cursorIndex;
+		var selections = data.infosUser.selections;
+
+		data.replicaNumber = infosUsersModule.replicaNumber;
+		infosUsersModule.emit('changeLocalCursorAndSelections', data);
+		infosUsersModule.updateCursorAndSelections(infosUsersModule.replicaNumber, cursorIndex, selections);
+	});
+
+	// Editor signals the changes made by the user to the document
+	editor.on('localOperation', function (data) {
+		var action = data.operation.action;
+		var index = data.operation.index;
+		var text = data.operation.text;
+
+		infosUsersModule.applyLocalOperation(action, index, text);
+	});
+
+	this.network = network;
+
+	var joinDoc = function (data) {
+		var replicaNumber;
+		var infosUser;
+
+		for(replicaNumber in data.infosUsers) {
+			infosUser = data.infosUsers[replicaNumber];
+			infosUsersModule.infosUsers[replicaNumber] = {
+				cursorIndex: infosUser.cursorIndex,
+				selections: infosUser.selections,
+				username: infosUser.username
+			};
+		}
+
+		infosUsersModule.network.removeListener('receiveDoc', joinDoc);
+		infosUsersModule.network.on('receiveDoc', reconnectToDoc);
+	};
+
+	var reconnectToDoc = function (data) {
+		var replicaNumber;
+		var infosUser = infosUsersModule.getLocalInfosUser();
+		var temp = {};
+
+		temp[infosUsersModule.replicaNumber] = {
+			cursorIndex: infosUser.cursorIndex,
+			selections: infosUser.selections,
+			username: infosUser.username
+		};
+
+		for(replicaNumber in data.infosUsers) {
+			if(parseInt(replicaNumber) !== parseInt(infosUsersModule.replicaNumber)) {
+				infosUser = data.infosUsers[replicaNumber];
+				temp[replicaNumber] = {
+					cursorIndex: infosUser.cursorIndex,
+					selections: infosUser.selections,
+					username: infosUser.username
+				};
+			}
+		}
+
+		infosUsersModule.infosUsers = temp;
+	};
+
+	network.on('receiveDoc', joinDoc);
+
+	network.on('receiveUserJoin', function (data) {
+		var replicaNumber = data.replicaNumber;
+		var username = data.username;
+
+		infosUsersModule.emit('addCollaborator', data);
+		infosUsersModule.addUser(replicaNumber, username);
+		infosUsersModule.updateRemoteInfosUsers();
+	});
+
+	network.on('receiveUserLeft', function (data) {
+		var replicaNumber = data.replicaNumber;
+
+		infosUsersModule.emit('removeCollaborator', data);
+		infosUsersModule.removeUser(replicaNumber);
+		infosUsersModule.updateRemoteInfosUsers();
+	});
+
+	network.on('changeCollaboratorCursorAndSelections', function (data) {
+		var replicaNumber = data.replicaNumber;
+		var cursorIndex = data.infosUser.cursorIndex;
+		var selections = data.infosUser.selections;
+
+		infosUsersModule.updateCursorAndSelections(replicaNumber, cursorIndex, selections);
+		infosUsersModule.updateRemoteInfosUsers();
+	});
+	/*
+	network.on('changeCollaboratorUsername', function (data) {
+		var replicaNumber = data.replicaNumber;
+		var username = data.username;
+
+		console.log('changeCollaboratorUsername');
+
+		infosUsersModule.updateUsername(replicaNumber, username);
+		infosUsersModule.updateRemoteInfosUsers();
+	});
+	*/
+	/*
+	this.usernameManager = usernameManager;
+
+	usernameManager.on('changeUsername', function (data) {
+		var username = data.username;
+
+		data.replicaNumber = infosUsersModule.replicaNumber;
+		infosUsersModule.emit('changeLocalUsername', data);
+		infosUserModule.updateLocalUsername(username);
+	});
+	*/
+
+    editor.on('readOnlyModeOn', function () {
+        infosUsersModule.readOnlyMode = true;
+        infosUsersModule.emit('updateRemoteIndicators', { infosUsers: {} });
+    });
+
+    editor.on('readOnlyModeOff', function () {
+        infosUsersModule.readOnlyMode = false;
+        infosUsersModule.updateRemoteInfosUsers();
+    });
+
+    network.on('connect', function () {
+        infosUsersModule.offlineMode = false;
+        infosUsersModule.updateRemoteInfosUsers();
+    });
+
+    network.on('disconnect', function () {
+        infosUsersModule.offlineMode = true;
+        infosUsersModule.emit('updateRemoteIndicators', { infosUsers: {} });
+        infosUsersModule.emit('updateCollaboratorsList', { infosUsers: {} });
+    });
+
+
+	this.serverDB = serverDB;
+};
+
+InfosUsersModule.prototype.__proto__ = events.EventEmitter.prototype;
+
+InfosUsersModule.prototype.getLocalInfosUser = function () {
+	return this.infosUsers[this.replicaNumber];
+};
+
+InfosUsersModule.prototype.updateCursorAndSelections = function (replicaNumber, cursorIndex, selections) {
+	if(this.infosUsers[replicaNumber] !== null
+		&& this.infosUsers[replicaNumber] !== undefined) {
+		this.infosUsers[replicaNumber].cursorIndex = cursorIndex;
+		this.infosUsers[replicaNumber].selections = selections;
+	}
+};
+
+InfosUsersModule.prototype.applyLocalOperation = function (action, index, text) {
+	var replicaNumber;
+	var infosUser;
+
+	for(replicaNumber in this.infosUsers) {
+		infosUser = this.infosUsers[replicaNumber];
+		// Since the 'changeCursorAndSelections' event will be triggered to update the user's infos
+		// We just have to update the collaborators' ones
+		if(parseInt(this.replicaNumber) !== parseInt(replicaNumber)) {
+			if(index < infosUser.cursorIndex) {
+				if(action === 'insertText') {
+					infosUser.cursorIndex += text.length;
+				}
+				else if(action === 'removeText') {
+					infosUser.cursorIndex -= text.length;
+				}
+			}
+
+			for(i=0; i<infosUser.selections.length; i++) {
+				selection = infosUser.selections[i];
+				if(index < selection.start) {
+					if(action === 'insertText') {
+						selection.start += text.length;
+					}
+					else if(action === 'removeText') {
+						selection.start -= text.length;
+					}
+				}
+
+				if(index < selection.end) {
+					if(action === 'insertText') {
+						selection.end += text.length;
+					}
+					else if(action === 'removeText') {
+						selection.end -= text.length;
+					}
+				}
+			}
+		}
+	}
+};
+
+InfosUsersModule.prototype.applyRemoteOperations = function (operations) {
+	var i, j;
+	var operation;
+	var replicaNumber;
+	var diffCursor = 0;
+
+	for(i=0; i<operations.length; i++) {
+		operation = operations[i];
+		
+		if(operation.content !== undefined && operation.offset !== undefined && operation.content !== null && operation.offset !== null) {
+			// Insertion
+			diffCursor = operation.content.length;
+		}
+		else if(operation.length !== undefined && operation.length !== null && operation.offset !== undefined && operation.offset !== null) {
+			// Deletion
+			diffCursor = - operation.length;
+		}
+
+		for(replicaNumber in this.infosUsers) {
+			if(parseInt(replicaNumber) !== parseInt(operation.owner)) {
+				infosUser = this.infosUsers[replicaNumber];
+				if(operation.offset < infosUser.cursorIndex) {
+					infosUser.cursorIndex += diffCursor;
+				}
+				for(j=0; j<infosUser.selections.length; j++) {
+					selection = infosUser.selections[j];
+					if(operation.offset < selection.start) {
+						selection.start += diffCursor;
+					}
+					if(operation.offset < selection.end) {
+						selection.end += diffCursor;
+					}
+				}
+			}
+		}
+	}
+};
+
+InfosUsersModule.prototype.updateRemoteInfosUsers = function () {
+	var infosUsersModule = this;
+	var replicaNumber;
+	var infosUser;
+	var temp = {};
+
+	if(this.updateTimeout === null) {
+		this.updateTimeout = setTimeout(function () {
+			for(replicaNumber in infosUsersModule.infosUsers) {
+				if(parseInt(replicaNumber) !== parseInt(infosUsersModule.replicaNumber) && parseInt(infosUsersModule.replicaNumber)>0) {
+					infosUser = infosUsersModule.infosUsers[replicaNumber];
+					temp[replicaNumber] = infosUser;
+				}
+			}
+			if(infosUsersModule.readOnlyMode === false && infosUsersModule.offlineMode === false) {
+				infosUsersModule.emit('updateRemoteIndicators', { infosUsers: temp });
+			}
+			if(infosUsersModule.offlineMode === false) {
+				infosUsersModule.emit('updateCollaboratorsList', { infosUsers: temp });
+			}
+			infosUsersModule.updateTimeout = null;
+		}, 100);
+	};
+
+
+};
+
+InfosUsersModule.prototype.addUser = function (replicaNumber, username) {
+	this.infosUsers[replicaNumber] = {
+		username: username,
+		cursorIndex: 0,
+		selections: []
+	};
+};
+
+InfosUsersModule.prototype.removeUser = function (replicaNumber) {
+	delete this.infosUsers[replicaNumber];
+};
+
+InfosUsersModule.prototype.updateLocalUsername = function (username) {
+	var infosUsersModule = this;
+
+	this.serverDB.models.query()
+	.filter('docID', this.docID)
+	.modify({ username: username })
+	.execute()
+	.done(function (results) {
+		infosUsersModule.infosUsers[replicaNumber].username = username;
+	});
+};
+
+InfosUsersModule.prototype.updateUsername = function (replicaNumber, username) {
+	if(this.infosUsers[replicaNumber] !== null
+		&& this.infosUsers[replicaNumber] !== undefined) {
+		this.infosUsers[replicaNumber].username = username;
+	}
+};
+
+module.exports = InfosUsersModule;
+},{"events":6}],5:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -905,11 +1266,12 @@ var SocketIOAdapter = function (coordinator) {
     this.coordinator = coordinator;
     this.socket = null;
     this.connectionCreated = false;
+
     this.coordinator.on('initNetwork', function (data) {
         socketIOAdapter.toOnlineMode();
     });
 
-    this.coordinator.on('toto', function (data) {
+    this.coordinator.on('queryDoc', function (data) {
         socketIOAdapter.socket.emit('joinDoc', data, function (result) {
             if(result.error === false) {
                 socketIOAdapter.emit('ack', { length: result.length });
@@ -920,6 +1282,20 @@ var SocketIOAdapter = function (coordinator) {
 
 SocketIOAdapter.prototype.__proto__ = events.EventEmitter.prototype;
 
+SocketIOAdapter.prototype.setInfosUsersModule = function (infosUsersModule) {
+    var socketIOAdapter = this;
+
+    this.infosUsersModule = infosUsersModule;
+
+    infosUsersModule.on('changeLocalCursorAndSelections', function (data) {
+        socketIOAdapter.socket.emit('sendLocalInfosUser', data);
+    });
+
+    infosUsersModule.on('changeLocalUsername', function (data) {
+        socketIOAdapter.socket.emit('sendLocalUsername', data);
+    });
+};
+
 SocketIOAdapter.prototype.createSocket = function () {
     var socketIOAdapter = this;
     var connOptions = {
@@ -928,25 +1304,25 @@ SocketIOAdapter.prototype.createSocket = function () {
 
     this.socket = io.connect(location.origin, connOptions);
 
-    this.socket.on('sendDoc', function (json) {
-        socketIOAdapter.emit('receiveDoc', json);
+    this.socket.on('sendDoc', function (data) {
+        socketIOAdapter.emit('receiveDoc', data);
     });
 
     this.socket.on('broadcastOps', function (data) {
         socketIOAdapter.emit('receiveOps', data);
     });
 
-    this.socket.on('sendInfosUsers', function (data) {
-        socketIOAdapter.emit('receiveInfosUsers', data);
+    this.socket.on('broadcastCollaboratorCursorAndSelections', function (data) {
+        socketIOAdapter.emit('changeCollaboratorCursorAndSelections', data);
     });
-
+    /*
+    this.socket.on('broadcastCollaboratorUsername', function (data) {
+        socketIOAdapter.emit('changeCollaboratorUsername', data);
+    });
+    */
     this.socket.on('broadcastParole', function (data) {
         socketIOAdapter.emit('receiveParole', data);
     }); 
-
-    this.coordinator.on('infosUser', function (data) {
-        socketIOAdapter.socket.emit('sendInfosUser', data);
-    });
 
     this.coordinator.on('operations', function (logootSOperations) {
         socketIOAdapter.send(logootSOperations);
@@ -957,15 +1333,20 @@ SocketIOAdapter.prototype.createSocket = function () {
     });
 
     this.socket.on('connect', function () {
-         socketIOAdapter.emit('connect');
-    });
-
-    this.socket.on('reconnect', function () {
-         socketIOAdapter.emit('connect');
+        socketIOAdapter.emit('connect');
     });
 
     this.socket.on('disconnect', function () {
         socketIOAdapter.emit('disconnect');
+    });
+
+
+    this.socket.on('userJoin', function (data) {
+        socketIOAdapter.emit('receiveUserJoin', data);
+    });
+
+    this.socket.on('userLeft', function (data) {
+        socketIOAdapter.emit('receiveUserLeft', data);
     });
 };
 
@@ -976,7 +1357,7 @@ SocketIOAdapter.prototype.toOnlineMode = function () {
     }
     else if(this.connectionCreated === false) {
         // First connexion
-        this.connectionCreate = true;
+        this.connectionCreated = true;
         this.socket.socket.connect();
     }
     else {
@@ -993,8 +1374,8 @@ SocketIOAdapter.prototype.toOfflineMode = function () {
 SocketIOAdapter.prototype.send = function (logootSOperations) {
     var socketIOAdapter = this;
     var obj = {
-        "logootSOperations": logootSOperations,
-        "lastModificationDate": new Date()
+        'logootSOperations': logootSOperations,
+        'lastModificationDate': new Date()
     };
     if(this.socket.socket.connected === true) {
         this.socket.emit('sendOps', obj, function (result) {
@@ -1005,9 +1386,30 @@ SocketIOAdapter.prototype.send = function (logootSOperations) {
     }
 };
 
+SocketIOAdapter.prototype.dispose = function () {
+    this.toOfflineMode();
+
+    this.coordinator.removeAllListeners('initNetwork');
+    this.coordinator.removeAllListeners('queryDoc');
+    this.coordinator.removeAllListeners('infosUser');
+    this.coordinator.removeAllListeners('operations');
+    this.coordinator.removeAllListeners('disconnect');
+
+    this.socket.removeAllListeners('connect');
+    this.socket.removeAllListeners('reconnect');
+    this.socket.removeAllListeners('disconnect');
+    this.socket.removeAllListeners('sendDoc');
+    this.socket.removeAllListeners('broadcastOps');
+    this.socket.removeAllListeners('sendInfosUsers');
+    this.socket.removeAllListeners('broadcastParole'); 
+
+    this.socket = null;
+    this.coordinator = null;
+};
+
 module.exports = SocketIOAdapter;
 
-},{"events":5}],5:[function(_dereq_,module,exports){
+},{"events":6}],6:[function(_dereq_,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -1312,7 +1714,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],6:[function(_dereq_,module,exports){
+},{}],7:[function(_dereq_,module,exports){
 /*
  *	Copyright 2014 Matthieu Nicolas
  *
@@ -1331,7 +1733,7 @@ function isUndefined(arg) {
  */
 module.exports = _dereq_('./lib/index');
 
-},{"./lib/index":10}],7:[function(_dereq_,module,exports){
+},{"./lib/index":11}],8:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -1477,7 +1879,7 @@ Identifier.prototype.maxOffsetBeforeNex = function (next, max) {
 
 module.exports = Identifier;
 
-},{}],8:[function(_dereq_,module,exports){
+},{}],9:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -1550,7 +1952,7 @@ IdentifierInterval.prototype.toString = function () {
 
 module.exports = IdentifierInterval;
 
-},{}],9:[function(_dereq_,module,exports){
+},{}],10:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -1598,7 +2000,7 @@ module.exports = {
     }
 };
 
-},{}],10:[function(_dereq_,module,exports){
+},{}],11:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -1634,7 +2036,7 @@ module.exports = {
     "TextInsert"    : _dereq_('./textinsert')
 };
 
-},{"./identifier":7,"./identifierinterval":8,"./idfactory":9,"./infinitestring":11,"./iterator":12,"./iteratorhelperidentifier":13,"./logootsadd":14,"./logootsblock":15,"./logootsdel":16,"./logootsropes":17,"./responseintnode":18,"./ropesnodes":19,"./textdelete":20,"./textinsert":21}],11:[function(_dereq_,module,exports){
+},{"./identifier":8,"./identifierinterval":9,"./idfactory":10,"./infinitestring":12,"./iterator":13,"./iteratorhelperidentifier":14,"./logootsadd":15,"./logootsblock":16,"./logootsdel":17,"./logootsropes":18,"./responseintnode":19,"./ropesnodes":20,"./textdelete":21,"./textinsert":22}],12:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -1671,7 +2073,7 @@ InfiniteString.prototype.next = function () {
 
 module.exports = InfiniteString;
 
-},{}],12:[function(_dereq_,module,exports){
+},{}],13:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -1719,7 +2121,7 @@ Iterator.prototype.next = function () {
 
 module.exports = Iterator;
 
-},{}],13:[function(_dereq_,module,exports){
+},{}],14:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -1807,7 +2209,7 @@ IteratorHelperIdentifier.prototype.computeResults = function() {
 
 module.exports = IteratorHelperIdentifier;
 
-},{}],14:[function(_dereq_,module,exports){
+},{}],15:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -1848,7 +2250,7 @@ LogootSAdd.prototype.execute = function (doc) {
 
 module.exports = LogootSAdd;
 
-},{}],15:[function(_dereq_,module,exports){
+},{}],16:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -1910,7 +2312,7 @@ LogootSBlock.prototype.toString = function() {
 
 module.exports = LogootSBlock;
 
-},{}],16:[function(_dereq_,module,exports){
+},{}],17:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -1956,7 +2358,7 @@ LogootSDel.prototype.execute = function (doc) {
 
 module.exports = LogootSDel;
 
-},{}],17:[function(_dereq_,module,exports){
+},{}],18:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2731,7 +3133,7 @@ LogootSRopes.prototype.viewLength = function () {
 
 module.exports = LogootSRopes;
 
-},{"./identifier":7,"./identifierinterval":8,"./idfactory":9,"./infinitestring":11,"./iterator":12,"./iteratorhelperidentifier":13,"./logootsadd":14,"./logootsblock":15,"./logootsdel":16,"./responseintnode":18,"./ropesnodes":19,"./textdelete":20,"./textinsert":21,"mute-utils":22}],18:[function(_dereq_,module,exports){
+},{"./identifier":8,"./identifierinterval":9,"./idfactory":10,"./infinitestring":12,"./iterator":13,"./iteratorhelperidentifier":14,"./logootsadd":15,"./logootsblock":16,"./logootsdel":17,"./responseintnode":19,"./ropesnodes":20,"./textdelete":21,"./textinsert":22,"mute-utils":23}],19:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2758,7 +3160,7 @@ var ResponseIntNode = function (i, node, path) {
 
 module.exports = ResponseIntNode;
 
-},{}],19:[function(_dereq_,module,exports){
+},{}],20:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3018,7 +3420,7 @@ RopesNodes.prototype.copyFromJSON = function (node) {
 
 module.exports = RopesNodes;
 
-},{}],20:[function(_dereq_,module,exports){
+},{}],21:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3048,7 +3450,7 @@ TextDelete.prototype.applyTo = function (doc) {
 
 module.exports = TextDelete;
 
-},{}],21:[function(_dereq_,module,exports){
+},{}],22:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3078,7 +3480,7 @@ TextInsert.prototype.applyTo = function (doc) {
 
 module.exports = TextInsert;
 
-},{}],22:[function(_dereq_,module,exports){
+},{}],23:[function(_dereq_,module,exports){
 /*
  *	Copyright 2014 Matthieu Nicolas
  *
