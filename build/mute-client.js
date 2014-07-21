@@ -759,7 +759,6 @@ Coordinator.prototype.join = function (json) {
 	json.docID = this.docID;	
 
 	this.replicaNumber = json.replicaNumber;
-	this.emit('replicaNumber', { replicaNumber: this.replicaNumber });
 	coordinator.updateLastModificationDate(new Date(json.lastModificationDate).valueOf());
 	this.creationDate = json.creationDate;
 
@@ -921,23 +920,19 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
 	var infosUsersModule = this;
 
 	this.docID = docID;
-	this.infosUsers = {};
+	this.infosUsers = {
+		'-1': {
+			cursorIndex: 0,
+			selections: [],
+			username: 'Unknown user'
+		}
+	};
 	this.replicaNumber = -1;
 	this.updateTimeout = null;
 	this.readOnlyMode = false;
 	this.offlineMode = true;
 
 	this.coordinator = coordinator;
-	
-	// Coordinator provides the replicaNumber
-	coordinator.once('replicaNumber', function (data) {
-		infosUsersModule.replicaNumber = data.replicaNumber;
-		infosUsersModule.infosUsers[data.replicaNumber] = {
-			cursorIndex: 0,
-			selections: [],
-			username: 'User ' + data.replicaNumber
-		};
-	});
 
 	// Coordinator signals the remote operations applied to the model
 	coordinator.on('remoteOperations', function (data) {
@@ -985,6 +980,9 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
 			var replicaNumber;
 			var infosUser;
 
+			infosUsersModule.replicaNumber = data.replicaNumber;
+			delete infosUsersModule.infosUsers['-1'];
+
 			for(replicaNumber in data.infosUsers) {
 				infosUser = data.infosUsers[replicaNumber];
 				infosUsersModule.infosUsers[replicaNumber] = {
@@ -993,6 +991,8 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
 					username: infosUser.username
 				};
 			}
+
+			infosUsersModule.updateLocalUsername(infosUsersModule.infosUsers[infosUsersModule.replicaNumber].username);
 
 			infosUsersModule.network.removeListener('receiveDoc', joinDoc);
 			infosUsersModule.network.on('receiveDoc', reconnectToDoc);
@@ -1050,8 +1050,10 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
 			infosUsersModule.updateCursorAndSelections(replicaNumber, cursorIndex, selections);
 			infosUsersModule.updateRemoteInfosUsers();
 		});
-		/*
+		
 		network.on('changeCollaboratorUsername', function (data) {
+			console.log('data: ', data);
+
 			var replicaNumber = data.replicaNumber;
 			var username = data.username;
 
@@ -1060,18 +1062,6 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
 			infosUsersModule.updateUsername(replicaNumber, username);
 			infosUsersModule.updateRemoteInfosUsers();
 		});
-		*/
-		/*
-		this.usernameManager = usernameManager;
-
-		usernameManager.on('changeUsername', function (data) {
-			var username = data.username;
-
-			data.replicaNumber = infosUsersModule.replicaNumber;
-			infosUsersModule.emit('changeLocalUsername', data);
-			infosUserModule.updateLocalUsername(username);
-		});
-		*/
 
 	    network.on('connect', function () {
 	        infosUsersModule.offlineMode = false;
@@ -1084,14 +1074,37 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
 	        infosUsersModule.emit('updateCollaboratorsList', { infosUsers: {} });
 	    });
 	}
-	
+
 	this.serverDB = serverDB;
+
+	this.initUsername();
 };
 
 InfosUsersModule.prototype.__proto__ = events.EventEmitter.prototype;
 
+InfosUsersModule.prototype.initUsername = function () {
+	var infosUsersModule = this;
+	var username = null;
+
+	this.serverDB.models.query()
+	.filter('docID', this.docID)
+	.execute()
+	.done(function (results) {
+		if(results.length > 0) {
+			username = results[0].username;
+		}
+		infosUsersModule.updateLocalUsername(username);
+	});
+};
+
 InfosUsersModule.prototype.getLocalInfosUser = function () {
+	console.log('On essaie d\'obtenir les infos de : ', this.replicaNumber);
+	console.log('Ce qui donne : ', this.infosUsers[this.replicaNumber]);
 	return this.infosUsers[this.replicaNumber];
+};
+
+InfosUsersModule.prototype.getUsername = function () {
+	return this.infosUsers[this.replicaNumber].username;
 };
 
 InfosUsersModule.prototype.updateCursorAndSelections = function (replicaNumber, cursorIndex, selections) {
@@ -1218,18 +1231,21 @@ InfosUsersModule.prototype.addUser = function (replicaNumber, username) {
 };
 
 InfosUsersModule.prototype.removeUser = function (replicaNumber) {
-	delete this.infosUsers[replicaNumber];
+	if(parseInt(this.replicaNumber) !== parseInt(replicaNumber)) {
+		delete this.infosUsers[replicaNumber];
+	}	
 };
 
 InfosUsersModule.prototype.updateLocalUsername = function (username) {
 	var infosUsersModule = this;
-
 	this.serverDB.models.query()
 	.filter('docID', this.docID)
 	.modify({ username: username })
 	.execute()
 	.done(function (results) {
-		infosUsersModule.infosUsers[replicaNumber].username = username;
+		infosUsersModule.infosUsers[infosUsersModule.replicaNumber].username = username;
+		console.log('data à envoyer : ', { replicaNumber: infosUsersModule.replicaNumber, username: username });
+		infosUsersModule.emit('changeLocalUsername', { replicaNumber: infosUsersModule.replicaNumber, username: username });
 	});
 };
 
@@ -1269,12 +1285,16 @@ var SocketIOAdapter = function (coordinator) {
     this.coordinator = coordinator;
     this.socket = null;
     this.connectionCreated = false;
+    this.infosUsersModule = null;
 
     this.coordinator.on('initNetwork', function (data) {
         socketIOAdapter.toOnlineMode();
     });
 
     this.coordinator.on('queryDoc', function (data) {
+        console.log('Ya');
+        data.username = socketIOAdapter.infosUsersModule.getUsername();
+        console.log('username: ', data.username);
         socketIOAdapter.socket.emit('joinDoc', data, function (result) {
             if(result.error === false) {
                 socketIOAdapter.emit('ack', { length: result.length });
@@ -1287,15 +1307,19 @@ SocketIOAdapter.prototype.__proto__ = events.EventEmitter.prototype;
 
 SocketIOAdapter.prototype.setInfosUsersModule = function (infosUsersModule) {
     var socketIOAdapter = this;
-
+    console.log('Yo');
     this.infosUsersModule = infosUsersModule;
 
     infosUsersModule.on('changeLocalCursorAndSelections', function (data) {
-        socketIOAdapter.socket.emit('sendLocalInfosUser', data);
+        if(socketIOAdapter.socket !== null && socketIOAdapter.socket !== undefined) {
+            socketIOAdapter.socket.emit('sendLocalInfosUser', data); 
+        }
     });
 
     infosUsersModule.on('changeLocalUsername', function (data) {
-        socketIOAdapter.socket.emit('sendLocalUsername', data);
+        if(socketIOAdapter.socket !== null && socketIOAdapter.socket !== undefined) {
+            socketIOAdapter.socket.emit('sendLocalUsername', data);
+        }
     });
 };
 
@@ -1318,11 +1342,11 @@ SocketIOAdapter.prototype.createSocket = function () {
     this.socket.on('broadcastCollaboratorCursorAndSelections', function (data) {
         socketIOAdapter.emit('changeCollaboratorCursorAndSelections', data);
     });
-    /*
+    
     this.socket.on('broadcastCollaboratorUsername', function (data) {
         socketIOAdapter.emit('changeCollaboratorUsername', data);
     });
-    */
+    
     this.socket.on('broadcastParole', function (data) {
         socketIOAdapter.emit('receiveParole', data);
     }); 
