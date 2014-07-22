@@ -46,6 +46,7 @@ module.exports = Mute;
 
 var events = _dereq_('events');
 
+var INIT_MODE = -1;
 var EDITOR_MODE = 0;
 var HISTORY_MODE = 1;
 
@@ -57,7 +58,7 @@ var AceEditorAdapter = function (itemID, coordinator) {
 	this.currentMarkers = [];
 	this.userInfosChanged = false;
 	this.mousePos = null;
-	this.mode = -1;
+	this.mode = INIT_MODE;
 	this.flag = false;
 	this.lastCursorIndex = 0;
 	this.previousLine = 0;
@@ -98,12 +99,14 @@ AceEditorAdapter.prototype.setInfosUsersModule = function (infosUsersModule) {
 	this.infosUsersModule = infosUsersModule;
 }
 
-AceEditorAdapter.prototype.init = function (data) {	
-	this.toHistoryMode();
-	this.editor.setValue(data.str);	
-	this.updateInfosUser();
-	this.toEditionMode();
-	this.infosUsersModule.updateRemoteInfosUsers();
+AceEditorAdapter.prototype.init = function (data) {
+	if(this.mode !== HISTORY_MODE) {
+		this.toHistoryMode();
+		this.editor.setValue(data.str);	
+		this.updateInfosUser();
+		this.toEditionMode(true);
+		this.infosUsersModule.updateRemoteInfosUsers();
+	}
 };
 
 AceEditorAdapter.prototype.sendUserInfos = function () {
@@ -154,7 +157,6 @@ AceEditorAdapter.prototype.onChangeAdapter = function (e) {
     }
     this.emit('localOperation', { operation: { action: action, index: index, text: text }});
     this.infosUsersModule.updateRemoteInfosUsers();
-    //this.emit('testMicro', { infosUser: { action: action, index: index, text: text }});
 };
 
 AceEditorAdapter.prototype.update = function (data) {
@@ -258,7 +260,7 @@ AceEditorAdapter.prototype.toHistoryMode = function () {
 	}
 };
 
-AceEditorAdapter.prototype.toEditionMode = function () {
+AceEditorAdapter.prototype.toEditionMode = function (flag) {
 	var aceEditorAdapter = this;
 	var pos;
 
@@ -401,6 +403,8 @@ var Coordinator = function (docID, serverDB) {
 
 	this.changed = false;
 	this.flagDB = false;
+	this.readOnlyMode = false;
+
 
 	this.bufferLogootSOp = []; 		// Buffer contenant les LogootSOperations distantes actuellement non traitées
 	this.bufferTextOp = [];			// Buffer contenant les TextOperations locales actuellement non converties en LogootSOperations
@@ -500,6 +504,17 @@ Coordinator.prototype.setEditor = function (editor) {
 	});
 	this.editor.on('scroll', function (viewTopRow) {
 		coordinator.viewTopRow = viewTopRow; 
+	});
+
+	this.editor.on('readOnlyModeOn', function () {
+		console.log('ReadOnlyModeOn');
+		coordinator.readOnlyMode = true;
+	});
+
+	this.editor.on('readOnlyModeOff', function () {
+		console.log('ReadOnlyModeOff');
+		coordinator.readOnlyMode = false;
+		coordinator.emit('initEditor', { str: coordinator.ropes.str });
 	});
 };
 
@@ -778,8 +793,11 @@ Coordinator.prototype.join = function (json) {
 
 	Utils.pushAll(this.bufferLogootSOp, json.bufferLogootSOp);
 
-	this.emit('initEditor', { str: this.ropes.str });
-
+	if(this.readOnlyMode === false) {
+		console.log('On envoie');
+		this.emit('initEditor', { str: this.ropes.str });
+	}
+	
 	this.emit('updateHistoryScrollerRange', { length: this.history.length });
 	this.emit('updateHistoryScrollerValue', { length: this.history.length });
 
