@@ -66,7 +66,7 @@ var AceEditorAdapter = function (itemID, coordinator) {
 	Range = ace.require('ace/range').Range;
 
 	style.type = 'text/css';
-	style.innerHTML = '.editor { margin-left: 15px; margin-top: 15px; width: 991px; height: 579px; overflow: visible}';
+	style.innerHTML = '.editor { margin-left: 15px; margin-top: 15px; width: 1100px; height: 600px; overflow: visible }';
 	document.getElementsByTagName('head')[0].appendChild(style);
 
 	document.getElementById(itemID).className = 'editor';
@@ -1052,12 +1052,8 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
 		});
 		
 		network.on('changeCollaboratorUsername', function (data) {
-			console.log('data: ', data);
-
 			var replicaNumber = data.replicaNumber;
 			var username = data.username;
-
-			console.log('changeCollaboratorUsername');
 
 			infosUsersModule.updateUsername(replicaNumber, username);
 			infosUsersModule.updateRemoteInfosUsers();
@@ -1098,8 +1094,6 @@ InfosUsersModule.prototype.initUsername = function () {
 };
 
 InfosUsersModule.prototype.getLocalInfosUser = function () {
-	console.log('On essaie d\'obtenir les infos de : ', this.replicaNumber);
-	console.log('Ce qui donne : ', this.infosUsers[this.replicaNumber]);
 	return this.infosUsers[this.replicaNumber];
 };
 
@@ -1244,7 +1238,6 @@ InfosUsersModule.prototype.updateLocalUsername = function (username) {
 	.execute()
 	.done(function (results) {
 		infosUsersModule.infosUsers[infosUsersModule.replicaNumber].username = username;
-		console.log('data à envoyer : ', { replicaNumber: infosUsersModule.replicaNumber, username: username });
 		infosUsersModule.emit('changeLocalUsername', { replicaNumber: infosUsersModule.replicaNumber, username: username });
 	});
 };
@@ -1292,9 +1285,7 @@ var SocketIOAdapter = function (coordinator) {
     });
 
     this.coordinator.on('queryDoc', function (data) {
-        console.log('Ya');
         data.username = socketIOAdapter.infosUsersModule.getUsername();
-        console.log('username: ', data.username);
         socketIOAdapter.socket.emit('joinDoc', data, function (result) {
             if(result.error === false) {
                 socketIOAdapter.emit('ack', { length: result.length });
@@ -1307,7 +1298,6 @@ SocketIOAdapter.prototype.__proto__ = events.EventEmitter.prototype;
 
 SocketIOAdapter.prototype.setInfosUsersModule = function (infosUsersModule) {
     var socketIOAdapter = this;
-    console.log('Yo');
     this.infosUsersModule = infosUsersModule;
 
     infosUsersModule.on('changeLocalCursorAndSelections', function (data) {
