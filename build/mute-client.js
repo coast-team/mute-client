@@ -100,6 +100,7 @@ AceEditorAdapter.prototype.setInfosUsersModule = function (infosUsersModule) {
 }
 
 AceEditorAdapter.prototype.init = function (data) {
+	// If we reconnect while being in history mode
 	if(this.mode !== HISTORY_MODE) {
 		this.toHistoryMode();
 		this.editor.setValue(data.str);	
@@ -507,12 +508,10 @@ Coordinator.prototype.setEditor = function (editor) {
 	});
 
 	this.editor.on('readOnlyModeOn', function () {
-		console.log('ReadOnlyModeOn');
 		coordinator.readOnlyMode = true;
 	});
 
 	this.editor.on('readOnlyModeOff', function () {
-		console.log('ReadOnlyModeOff');
 		coordinator.readOnlyMode = false;
 		coordinator.emit('initEditor', { str: coordinator.ropes.str });
 	});
@@ -794,7 +793,6 @@ Coordinator.prototype.join = function (json) {
 	Utils.pushAll(this.bufferLogootSOp, json.bufferLogootSOp);
 
 	if(this.readOnlyMode === false) {
-		console.log('On envoie');
 		this.emit('initEditor', { str: this.ropes.str });
 	}
 	
@@ -1388,14 +1386,17 @@ SocketIOAdapter.prototype.createSocket = function () {
 SocketIOAdapter.prototype.toOnlineMode = function () {
     if(this.socket === null) {
         // First time we connect to the server
+        console.log('createSocket');
         this.createSocket();
     }
     else if(this.connectionCreated === false) {
         // First connexion
+        console.log('connectionCreated');
         this.connectionCreated = true;
         this.socket.socket.connect();
     }
     else {
+        console.log('reconnect');
         this.socket.socket.reconnect();
     }
 };
