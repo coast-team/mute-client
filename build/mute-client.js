@@ -300,7 +300,7 @@ AceEditorAdapter.prototype.toEditionMode = function (flag) {
 		this.editor.navigateTo(pos.row, pos.column);
 		this.editor.scrollToRow(this.previousLine);
 
-		this.editor.editor.session.setUndoManager(this.previousUndoManager);
+		this.editor.session.setUndoManager(this.previousUndoManager);
 		this.previousUndoManager = null;
 		this.editor.setReadOnly(false);
 		this.emit('readOnlyModeOff');
