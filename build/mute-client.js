@@ -45,6 +45,7 @@ module.exports = Mute;
  */
 
 var events = _dereq_('events');
+var UndoManager = ace.require('ace/undomanager').UndoManager;
 
 var INIT_MODE = -1;
 var EDITOR_MODE = 0;
@@ -55,6 +56,7 @@ var AceEditorAdapter = function (itemID, coordinator) {
 	var style = document.createElement('style');
 	
 	this.coordinator = coordinator;
+	this.previousUndoManager = null;
 	this.currentMarkers = [];
 	this.userInfosChanged = false;
 	this.mousePos = null;
@@ -250,6 +252,7 @@ AceEditorAdapter.prototype.updateVisibleNames = function () {
 
 AceEditorAdapter.prototype.toHistoryMode = function () {
 	if(this.mode !== HISTORY_MODE) {
+		this.previousUndoManager = this.editor.editor.session.getUndoManager(new UndoManager());
 		this.previousLine = parseInt(this.editor.renderer.getScrollTopRow());
 		this.editor.removeAllListeners('change');
 		this.editor.removeAllListeners('changeSelection');
@@ -296,6 +299,8 @@ AceEditorAdapter.prototype.toEditionMode = function (flag) {
 		this.editor.navigateTo(pos.row, pos.column);
 		this.editor.scrollToRow(this.previousLine);
 
+		this.editor.editor.session.setUndoManager(this.previousUndoManager);
+		this.previousUndoManager = null;
 		this.editor.setReadOnly(false);
 		this.emit('readOnlyModeOff');
 		this.mode = EDITOR_MODE;
