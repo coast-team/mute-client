@@ -252,7 +252,7 @@ AceEditorAdapter.prototype.updateVisibleNames = function () {
 
 AceEditorAdapter.prototype.toHistoryMode = function () {
 	if(this.mode !== HISTORY_MODE) {
-		this.previousUndoManager = this.editor.editor.session.getUndoManager(new UndoManager());
+		this.previousUndoManager = this.editor.session.getUndoManager(new UndoManager());
 		this.previousLine = parseInt(this.editor.renderer.getScrollTopRow());
 		this.editor.removeAllListeners('change');
 		this.editor.removeAllListeners('changeSelection');
@@ -299,7 +299,7 @@ AceEditorAdapter.prototype.toEditionMode = function (flag) {
 		this.editor.navigateTo(pos.row, pos.column);
 		this.editor.scrollToRow(this.previousLine);
 
-		this.editor.editor.session.setUndoManager(this.previousUndoManager);
+		this.editor.session.setUndoManager(this.previousUndoManager);
 		this.previousUndoManager = null;
 		this.editor.setReadOnly(false);
 		this.emit('readOnlyModeOff');
