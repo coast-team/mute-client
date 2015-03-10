@@ -187,14 +187,31 @@ AceEditorAdapter.prototype.update = function (data) {
 	var aceEditorAdapter = this;
 
 	var doc = this.editor.session.doc;
-	var topRow = this.editor.renderer.getScrollTopRow() + data.diffNbLines;
+	//var topRow = this.editor.renderer.getScrollTopRow() + data.diffNbLines;
 	var i, j;
+	var operation;
 	
+
+	console.log('data: ', data);
+
 	this.editor.removeAllListeners('change');
 
-	this.editor.setValue(data.str);
+	for(i=0; i<data.operations.length; i++) {
+		operation = data.operations[0];
+		if(operation.content !== undefined) {
+			var position = doc.indexToPosition(operation.offset);
+			doc.insert(position, operation.content);
+		}
+		else {
+			var start = doc.indexToPosition(operation.offset);
+			var end = doc.indexToPosition(operation.offset + operation.length);
+			doc.remove(new Range(start, end));
+		}
+	}
 
-	this.updateInfosUser();
+	//this.editor.setValue(data.str);
+
+	//this.updateInfosUser();
 
 	// Update the collaborators' infos
 	this.infosUsersModule.updateRemoteInfosUsers();
@@ -205,7 +222,7 @@ AceEditorAdapter.prototype.update = function (data) {
 		}
 	});
 
-	this.editor.renderer.scrollToLine(topRow, false, true);
+	//this.editor.renderer.scrollToLine(topRow, false, true);
 };
 
 AceEditorAdapter.prototype.clearRemoteIndicators = function () {
@@ -767,7 +784,7 @@ Coordinator.prototype.cleanBufferLogootSOp = function () {
 		this.flag = false;
 
 		this.emit('remoteOperations', { operations: operations });
-		this.emit('update', { str: this.ropes.str, diffNbLines: diffNbLines });
+		this.emit('update', { str: this.ropes.str, diffNbLines: diffNbLines, operations: tos });
 		
 		//this.emit('awareness', { nbLogootSOp: this.bufferLogootSOp.length });
 		if(this.editor !== null) {
