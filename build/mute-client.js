@@ -187,12 +187,8 @@ AceEditorAdapter.prototype.update = function (data) {
 	var aceEditorAdapter = this;
 
 	var doc = this.editor.session.doc;
-	//var topRow = this.editor.renderer.getScrollTopRow() + data.diffNbLines;
 	var i, j;
 	var operation;
-	
-
-	console.log('data: ', data);
 
 	this.editor.removeAllListeners('change');
 
@@ -205,13 +201,9 @@ AceEditorAdapter.prototype.update = function (data) {
 		else {
 			var start = doc.indexToPosition(operation.offset);
 			var end = doc.indexToPosition(operation.offset + operation.length);
-			doc.remove(new Range(start, end));
+			doc.remove(new Range(start.row, start.column, end.row, end.column));
 		}
 	}
-
-	//this.editor.setValue(data.str);
-
-	//this.updateInfosUser();
 
 	// Update the collaborators' infos
 	this.infosUsersModule.updateRemoteInfosUsers();
@@ -221,8 +213,6 @@ AceEditorAdapter.prototype.update = function (data) {
 			aceEditorAdapter.onChangeAdapter(e);
 		}
 	});
-
-	//this.editor.renderer.scrollToLine(topRow, false, true);
 };
 
 AceEditorAdapter.prototype.clearRemoteIndicators = function () {
