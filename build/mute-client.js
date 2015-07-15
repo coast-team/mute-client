@@ -444,7 +444,9 @@ var Coordinator = function (docID, serverDB) {
     this.lastModificationDate = new Date();
     this.replicaNumber = -1;
     this.clock = 0;
-    this.ropes = null;
+    this.ropes = new LogootSRopes();
+    console.log("ROPES");
+    console.log(this.ropes);
     this.bufferLocalLogootSOp = []; // Buffer contenant les LogootSOperations locales actuellement non ack
     this.mode = ONLINE_MODE;
     // --------------------------------
@@ -477,6 +479,8 @@ var Coordinator = function (docID, serverDB) {
     this.updateLastModificationDateTimeout = null;
 
     this.localOperationHandler = function (data) {
+        console.log("local op !");
+        console.log(data);
         if(coordinator.disposed === false) {
             var action = data.operation.action;
             var index = data.operation.index;
@@ -492,6 +496,7 @@ var Coordinator = function (docID, serverDB) {
 Coordinator.prototype.__proto__ = events.EventEmitter.prototype;
 
 Coordinator.prototype.init = function () {
+    console.log("INIT");
     var coordinator = this;
     var callback = function () {
         if(coordinator.mode === ONLINE_MODE && coordinator.network !== null && coordinator.network !== undefined) {
@@ -510,6 +515,7 @@ Coordinator.prototype.init = function () {
     .done(function (results) {
         var doc;
         if(results.length === 0) {
+            console.log("BLOB");
             // New doc, add it to the DB
             doc = {
                 docID: coordinator.docID,
@@ -528,6 +534,7 @@ Coordinator.prototype.init = function () {
             });
         }
         else {
+            console.log("BLOG");
             // Retrieve the data stored
             doc = results[0];
             coordinator.creationDate = doc.creationDate;
@@ -834,13 +841,29 @@ Coordinator.prototype.applyReverseTextOperation = function (str, to) {
     }
     return str;
 };
-Coordinator.prototype.giveCopy = function() {
-    var args;
+Coordinator.prototype.giveCopy = function(data) {
+    var args = {};
+    args.callerID = data;
     args.bufferLogootSOp = this.bufferLogootSOp;
     args.bufferLocalLogootSOp = this.bufferLocalLogootSOp;
-    //TODO
+    args.ropes = this.ropes;
+    args.lastModificationDate = this.lastModificationDate;
+    args.creationDate = this.creationDate;
+    args.history = this.history;
+    console.log("give copy !!");
+    console.log(args);
+    if(data !== null){
+        args.callerID = data;
+        this.emit('doc', args);
+    }else{
+        this.emit('initDoc', args);
+    }
+    
+
 };
 Coordinator.prototype.join = function (json) {
+    console.log("JOIN");
+    console.log(json);
     var coordinator = this;
 
     var temp;
@@ -1141,7 +1164,7 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
             infosUsersModule.infosUsers = temp;
         };
 
-        network.on('receiveDoc', joinDoc);
+        //network.on('receiveDoc', joinDoc);
 
         network.on('receiveUserJoin', function (data) {
             if(infosUsersModule.disposed === false) {
@@ -1422,6 +1445,7 @@ var PeerIOAdapter = function(coordinator){
     this.infosUsersModule = null;
     this.disposed = false;
     this.joinDoc = false;
+    this.first = false;
 
     this.coordinator.on('initNetwork', function (data) {
         if(peerIOAdapter.disposed === false) {
@@ -1445,6 +1469,44 @@ var PeerIOAdapter = function(coordinator){
             peerIOAdapter.onCoordinatorDisposedHandler(data);
         }
     });
+    this.coordinator.on('doc', function (args){
+        console.log(args);
+        msg = {
+            "ropes": args.ropes,
+            "history": args.history,
+            "bufferLogootSOp": args.bufferLogootSOp,
+            "creationDate": args.creationDate,
+            "lastModificationDate": args.lastModificationDate
+        };
+
+        var data = {};
+        data.event = 'sendDoc';
+        data.data = msg;
+
+        var connection = peerIOAdapter.getPeer(args.callerID );
+        console.log(connection);
+        if(connection !== null){
+            console.log("BOUUH 1 !!");
+            console.log(data);
+            connection.send(JSON.stringify(data));
+        }else{
+            console.log("FATAL ERROR !!!");
+        }
+
+    });
+
+
+    this.coordinator.on('initDoc', function (args){
+        console.log("BIIIIIIMMMMM");
+        msg = {
+            "ropes": args.ropes,
+            "history": args.history,
+            "bufferLogootSOp": args.bufferLogootSOp,
+            "creationDate": args.creationDate,
+            "lastModificationDate": args.lastModificationDate
+        };
+        peerIOAdapter.emit('receiveDoc', msg);
+    });
 };
 
 PeerIOAdapter.prototype.__proto__ = events.EventEmitter.prototype;
@@ -1457,7 +1519,10 @@ PeerIOAdapter.prototype.setInfosUsersModule = function(infosUsers){
     infosUsersModule.on('changeLocalCursorAndSelections', function (data) {
         if(peerIOAdapter.disposed === false) {
             for (var i = 0; i < peerIOAdapter.peers.length; i++) {
-                newData = new Data('broadcastCollaboratorCursorAndSelections', data);
+                var newData = {
+                    event : 'broadcastCollaboratorCursorAndSelections',
+                    data :  data
+                };
                 peerIOAdapter.peers[i].send(newData);
             }
         }
@@ -1466,7 +1531,10 @@ PeerIOAdapter.prototype.setInfosUsersModule = function(infosUsers){
     infosUsersModule.on('changeLocalUsername', function (data) {
         if(peerIOAdapter.disposed === false) {
             for (var i = 0; i < peerIOAdapter.peers.length; i++) {
-                newData = new Data('broadcastCollaboratorUsername', data);
+                var newData = {
+                    event : 'broadcastCollaboratorUsername',
+                    data :  data
+                };
                 peerIOAdapter.peers[i].send(newData);
             }
         }
@@ -1502,12 +1570,16 @@ PeerIOAdapter.prototype.createSocket = function () {
             console.log("ok");
             console.log(connection);
             peerIOAdapter.peers.push(connection);
-            if(!peerIOAdapter.joinDoc){
+            console.log("joinDoc val :");
+            console.log(peerIOAdapter.joinDoc);
+            console.log("first val :");
+            console.log(peerIOAdapter.first);
+            if(!peerIOAdapter.joinDoc && !peerIOAdapter.first){
                 console.log("joinDoc");
                 peerIOAdapter.joinDoc = true;
                 var msg = {
                     event : 'joinDoc',
-                    data : null
+                    data : peerIOAdapter.peerId
                 };
                 connection.send(msg);
             }
@@ -1520,12 +1592,22 @@ PeerIOAdapter.prototype.createSocket = function () {
         }
     }
 
-    function handleEvent(data){
+    function handleEvent(args){
+        console.log("HANDLE !!!");
+        console.log(args);
+        var data;
+        try{
+            data = JSON.parse(args);
+        }catch(e){
+            data = args;
+        }
         if(data.event !== null && data.event !== undefined){
             switch(data.event){
                 case 'sendDoc':
                     if(peerIOAdapter.disposed === false) {
-                        peerIOAdapter.emit('receiveOps', data);
+                        console.log("BOUUH 2 !!");
+                        console.log(data.data);
+                        peerIOAdapter.emit('receiveDoc', data.data);
                     }
                     break;
                 case 'broadcastCollaboratorCursorAndSelections':
@@ -1567,7 +1649,7 @@ PeerIOAdapter.prototype.createSocket = function () {
                     }
                     break;
                 case 'joinDoc' :
-                    console.log("YOLLOOOOLLOLOLOLOLOLO");
+                    peerIOAdapter.coordinator.giveCopy(data.data);
                     break;
                 default :
                     console.log("handleEvent : ERROR !");
@@ -1589,6 +1671,12 @@ PeerIOAdapter.prototype.createSocket = function () {
         console.log(inforPeerIds);
         var peerIds = inforPeerIds.peers;
         peerIOAdapter.replicaNumber = inforPeerIds.replicaNumber;
+        if(peerIds.length === 0){
+            peerIOAdapter.first = true;
+            peerIOAdapter.joinDoc = true;
+            peerIOAdapter.coordinator.giveCopy(null);
+        }
+        console.log(peerIOAdapter.replicaNumber);
         for(var i = 0; i < peerIds.length; i++){
             console.log("Add Peer : " + peerIds[i]);
             var remoteId = peerIds[i];
@@ -1651,7 +1739,7 @@ PeerIOAdapter.prototype.send = function (logootSOperations) {
         'lastModificationDate': new Date()
     };
     var newData = new Data('sendOps', obj);
-    for(var i = 0; i < peers.length; i++){
+    for(var i = 0; i < this.peers.length; i++){
         this.peers[i].send(newData);
     }
 };
@@ -1676,6 +1764,15 @@ PeerIOAdapter.prototype.onCoordinatorDisposedHandler = function () {
             }
         }
     }
+};
+
+PeerIOAdapter.prototype.getPeer = function(peerID) {
+    for (var i = 0; i < this.peers.length; i++) {
+        if(this.peers[i].peer === peerID){
+            return this.peers[i];
+        }
+    }
+    return null;
 };
 
 PeerIOAdapter.prototype.join = function () {
