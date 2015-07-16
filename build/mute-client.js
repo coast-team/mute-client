@@ -1603,6 +1603,11 @@ PeerIOAdapter.prototype.createSocket = function () {
         }
         if(data.event !== null && data.event !== undefined){
             switch(data.event){
+                case 'sendOps':
+                    if(peerIOAdapter.disposed === false) {
+                        peerIOAdapter.emit('receiveOps', data.data);
+                    }
+                    break;
                 case 'sendDoc':
                     if(peerIOAdapter.disposed === false) {
                         console.log("BOUUH 2 !!");
@@ -1687,6 +1692,7 @@ PeerIOAdapter.prototype.createSocket = function () {
     this.peer.on('connection', connect);
 
     this.coordinator.on('operations', function (logootSOperations) {
+        console.log('yolo');
         if(peerIOAdapter.disposed === false) {
             peerIOAdapter.send(logootSOperations);
         }
@@ -1738,8 +1744,10 @@ PeerIOAdapter.prototype.send = function (logootSOperations) {
         'logootSOperations': logootSOperations,
         'lastModificationDate': new Date()
     };
-    var newData = new Data('sendOps', obj);
+    var data = new Data('sendOps', obj);
+    var newData = JSON.stringify(data);
     for(var i = 0; i < this.peers.length; i++){
+        console.log("coucou");
         this.peers[i].send(newData);
     }
 };
@@ -1866,12 +1874,14 @@ SocketIOAdapter.prototype.createSocket = function () {
     this.socket = io.connect(location.origin, connOptions);
 
     this.socket.on('sendDoc', function (data) {
+        console.log("SEND DOC !!!");
         if(socketIOAdapter.disposed === false) {
             socketIOAdapter.emit('receiveDoc', data);
         }
     });
 
     this.socket.on('broadcastOps', function (data) {
+        console.log("BROADCAST OPS");
         if(socketIOAdapter.disposed === false) {
             socketIOAdapter.emit('receiveOps', data);
         }
@@ -1893,7 +1903,7 @@ SocketIOAdapter.prototype.createSocket = function () {
         if(socketIOAdapter.disposed === false) {
             socketIOAdapter.emit('receiveParole', data);
         }
-    }); 
+    });
 
     this.coordinator.on('operations', function (logootSOperations) {
         if(socketIOAdapter.disposed === false) {
