@@ -1439,10 +1439,23 @@ module.exports = InfosUsersModule;
 },{"events":7}],5:[function(_dereq_,module,exports){
 var events = _dereq_('events');
 
+/*
+Data Object
+event : message context
+data : message content
+ */
+
 var Data = function(event, data){
     this.event = event;
     this.data = data;
 };
+
+/*
+PeerInfo Object
+Inofmrations about remote peer
+connection : connection between the current and the remote peer
+relpicaNumber : replica number of the remote peer
+ */
 
 var PeerInfo = function(connection){
     this.connection = connection;
@@ -1453,22 +1466,27 @@ PeerInfo.prototype.setReplicaNumber = function(replicaNumber){
     this.replicaNumber = replicaNumber;
 };
 
+/*
+PeerIOAdapter Object
+Initialize and manage web p2p network
+ */
+
 var PeerIOAdapter = function(coordinator){
     var peerIOAdapter = this;
 
-    this.coordinator = coordinator;
-    this.peer = null;
-    this.peers = [];
-    this.peerId = null;
+    this.coordinator = coordinator; // coordinator of the current peer
+    this.peer = null; //peer object from peerJS API http://peerjs.com/
+    this.peers = []; //list of remote peers
+    this.peerId = null; //peerId of the current peer
     this.socketServer = null;
     this.connectionCreated = false;
     this.infosUsersModule = null;
     this.disposed = false;
     this.joinDoc = false;
     this.first = false;
-    this.replicaNumber = null;
-    this.username = null;
-    this.defaultInfoUsers = null;
+    this.replicaNumber = null; //replica number of the current peer
+    this.username = null; //username of current peer
+    this.defaultInfoUsers = null; //defaultInfosUsers genrated at the connection initialization 
 
     this.coordinator.on('initNetwork', function (data) {
         if(peerIOAdapter.disposed === false) {
@@ -1479,11 +1497,6 @@ var PeerIOAdapter = function(coordinator){
     this.coordinator.on('queryDoc', function (data) {
         if(peerIOAdapter.disposed === false) {
             data.username = peerIOAdapter.infosUsersModule.getUsername();
-            // peerIOAdapter.socketServer.emit('joinDoc', data, function (result) {
-            //     if(result.error === false) {
-            //         peerIOAdapter.emit('ack', { length: result.length });
-            //     }
-            // });
         }
     });
 
@@ -1493,6 +1506,7 @@ var PeerIOAdapter = function(coordinator){
         }
     });
     this.coordinator.on('doc', function (args){
+        //Give a copy of the 
         console.log(args);
         msg = {
             "ropes": args.ropes,
@@ -1502,15 +1516,12 @@ var PeerIOAdapter = function(coordinator){
             "lastModificationDate": args.lastModificationDate
         };
 
-        var data = {};
-        data.event = 'sendDoc';
-        data.data = msg;
+        var data = JSON.stringify(new Data('sendDoc', msg));
 
         var connection = peerIOAdapter.getPeer(args.callerID );
         console.log(connection);
         if(connection !== null){
-            console.log(data);
-            connection.send(JSON.stringify(data));
+            connection.send(data);
         }
 
     });
@@ -1539,12 +1550,8 @@ PeerIOAdapter.prototype.setInfosUsersModule = function(infosUsers){
         data.replicaNumber = peerIOAdapter.replicaNumber;
         if(peerIOAdapter.disposed === false) {
             for (var i = 0; i < peerIOAdapter.peers.length; i++) {
-                var newData = {
-                    event : 'broadcastCollaboratorCursorAndSelections',
-                    data :  data
-                };
-                var newNewData = JSON.stringify(newData);
-                peerIOAdapter.peers[i].connection.send(newNewData);
+                var newData = JSON.stringify(new Data('broadcastCollaboratorCursorAndSelections', data));
+                peerIOAdapter.peers[i].connection.send(newData);
             }
         }
     });
@@ -1553,12 +1560,7 @@ PeerIOAdapter.prototype.setInfosUsersModule = function(infosUsers){
         data.replicaNumber = peerIOAdapter.replicaNumber;
         if(peerIOAdapter.disposed === false) {
             for (var i = 0; i < peerIOAdapter.peers.length; i++) {
-                var newData = {
-                    event : 'broadcastCollaboratorUsername',
-                    data :  data
-                };
-                var newNewData = JSON.stringify(newData);
-                peerIOAdapter.peers[i].connection.send(newNewData);
+                var newData = JSON.stringify(new Data('broadcastCollaboratorUsername', data));
                 peerIOAdapter.peers[i].connection.send(newData);
             }
         }
@@ -1568,15 +1570,15 @@ PeerIOAdapter.prototype.setInfosUsersModule = function(infosUsers){
 
 PeerIOAdapter.prototype.createSocket = function () {
     var peerIOAdapter = this;
-    this.peer = [];
+    this.peers = [];// empty the remote peers list
     var connOptions = {
         'sync disconnect on unload': true
     };
 
     this.socketServer = io.connect(location.origin, connOptions);
 
-    this.peer = new Peer({key: 'lwjd5qra8257b9', debug : true});
-
+    //this.peer = new Peer({key: 'lwjd5qra8257b9', debug : true}); // actually using a foreign signaling server
+    this.peer = new Peer('someid', {host: '/', port: 8080, path: '/peerjs'});
     this.peer.on('open', function(id){
         peerIOAdapter.peerId = id;
         var infoPeer = {
@@ -1586,7 +1588,7 @@ PeerIOAdapter.prototype.createSocket = function () {
         peerIOAdapter.socketServer.emit('newPeer', infoPeer);
     });
 
-    function connect (connection){
+    function connect (connection){ //Initialize connection with remote peer
         console.log("connection");
         if(!peerIOAdapter.peerAlreadyExists(connection)){
             console.log(connection);
@@ -1594,12 +1596,11 @@ PeerIOAdapter.prototype.createSocket = function () {
             var peerInfo = new PeerInfo(connection);
             peerIOAdapter.peers.push(peerInfo);
             
-            connection.on('data', handleEvent);
+            connection.on('data', handleEvent); // data receiving
             
             connection.on('close', function(){
-                console.log("YOLOOOO ");
-                console.log(connection.peer);
-                var replicaNumber = peerIOAdapter.getReplicaNumber(connection.peer);
+                //connection closing
+                var replicaNumber = peerIOAdapter.getReplicaNumber(connection.peer); 
                 peerIOAdapter.emit('removeUser', replicaNumber);
                 this.close();
                 var index = peerIOAdapter.peers.indexOf(this);
@@ -1622,141 +1623,143 @@ PeerIOAdapter.prototype.createSocket = function () {
     }
 
     function handleEvent(args){
+        //manage data receiving 
         console.log("HandleEvent");
         console.log(args);
-        var data;
         try{
-            data = JSON.parse(args);
-        }catch(e){
-            data = args;
-        }
-        if(data.event !== null && data.event !== undefined){
-            switch(data.event){
-                case 'sendOps':
-                    if(peerIOAdapter.disposed === false) {
-                        data.data.replicaNumber = peerIOAdapter.replicaNumber;
-                        peerIOAdapter.emit('receiveOps', data.data);
-                    }
-                    break;
-                case 'sendDoc':
-                    if(peerIOAdapter.disposed === false) {
-                        console.log(data.data);
-                        if(peerIOAdapter.replicaNumber !== null){
+            var data = JSON.parse(args);
+            if(data.event !== null && data.event !== undefined){
+                switch(data.event){
+                    case 'sendOps':
+                        if(peerIOAdapter.disposed === false) {
                             data.data.replicaNumber = peerIOAdapter.replicaNumber;
-                            data.data.infosUsers = peerIOAdapter.defaultInfoUsers;
-                        console.log('receiveOps');
-                        console.log(data.data);
+                            peerIOAdapter.emit('receiveOps', data.data);
                         }
-                        peerIOAdapter.emit('receiveDoc', data.data);
-                        peerIOAdapter.emit('receiveDocPeer', data.data);
-                    }
-                    break;
-                case 'queryUserInfo' :
-                    if(peerIOAdapter.disposed === false) {
-                        var peerId = data.data.peerId;
-                        peerIOAdapter.emit('addUser', data.data.replicaNumber, data.data.username);
-                        peerIOAdapter.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
-                        data = {
-                            peerId : peerIOAdapter.peerId,
-                            replicaNumber : peerIOAdapter.replicaNumber,
-                            username : peerIOAdapter.username
-                        };
-                        var msg = JSON.stringify(new Data('addUser', data));
-                        var connection = peerIOAdapter.getPeer(peerId );
-                        console.log(connection);
-                        if(connection !== null){
-                            connection.send(msg);
+                        break;
+                    case 'sendDoc':
+                        if(peerIOAdapter.disposed === false) {
+                            if(peerIOAdapter.replicaNumber !== null){
+                                data.data.replicaNumber = peerIOAdapter.replicaNumber;
+                                data.data.infosUsers = peerIOAdapter.defaultInfoUsers;
+                            console.log('receiveOps');
+                            }
+                            peerIOAdapter.emit('receiveDoc', data.data);
+                            peerIOAdapter.emit('receiveDocPeer', data.data);
                         }
-                    }
-
-                    break;
-                case 'addUser' :
-                    console.log("addUser");
-                    if(peerIOAdapter.disposed === false) {
-                        peerIOAdapter.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
-                        peerIOAdapter.emit('addUser', data.data.replicaNumber, data.data.username);
-                    }
-                    break;
-                case 'broadcastCollaboratorCursorAndSelections':
-                    console.log("kikou");
-                    if(peerIOAdapter.disposed === false) {
-                        peerIOAdapter.emit('changeCollaboratorCursorAndSelections', data.data);
-                    }
-                    break;
-                case 'broadcastCollaboratorUsername' :
-                    console.log("kikou2");
-                    if(peerIOAdapter.disposed === false) {
-                        peerIOAdapter.emit('changeCollaboratorUsername', data.data);
-                    }
-                    break;
-                case 'broadcastParole' :
-                    if(peerIOAdapter.disposed === false) {
-                        peerIOAdapter.emit('receiveParole', data.data);
-                    }
-                    break;
-                case 'connect' :
-                    if(peerIOAdapter.disposed === false) {
-                        peerIOAdapter.emit('connect');
-                    }
-                    break;
-                case 'disconnect' :
-                    //TODO
-                    if(peerIOAdapter.disposed === false) {
-                        peerIOAdapter.emit('connect');
-                    }
-                    break;
-                case 'userJoin' :
-                    if(peerIOAdapter.disposed === false) {
-                        peerIOAdapter.emit('receiveUserJoin', data.data);
-                    }
-                    break;
-                case 'userLeft' :
-                    if(peerIOAdapter.disposed === false) {
-                        peerIOAdapter.emit('receiveUserLeft', data.data);
-                    }
-                    break;
-                case 'joinDoc' :
-                    peerIOAdapter.coordinator.giveCopy(data.data);
-                    break;
-                default :
-                    console.log("handleEvent : ERROR !");
-                    break;
+                        break;
+                    case 'queryUserInfo' :
+                        if(peerIOAdapter.disposed === false) {
+                            var peerId = data.data.peerId;
+                            peerIOAdapter.emit('addUser', data.data.replicaNumber, data.data.username);
+                            peerIOAdapter.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
+                            data = {
+                                peerId : peerIOAdapter.peerId,
+                                replicaNumber : peerIOAdapter.replicaNumber,
+                                username : peerIOAdapter.username
+                            };
+                            var msg = JSON.stringify(new Data('addUser', data));
+                            var connection = peerIOAdapter.getPeer(peerId );
+                            if(connection !== null){
+                                connection.send(msg);
+                            }
+                        }
+                        break;
+                    case 'addUser' :
+                        console.log("addUser");
+                        if(peerIOAdapter.disposed === false) {
+                            peerIOAdapter.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
+                            peerIOAdapter.emit('addUser', data.data.replicaNumber, data.data.username);
+                        }
+                        break;
+                    case 'broadcastCollaboratorCursorAndSelections':
+                        if(peerIOAdapter.disposed === false) {
+                            peerIOAdapter.emit('changeCollaboratorCursorAndSelections', data.data);
+                        }
+                        break;
+                    case 'broadcastCollaboratorUsername' :
+                        if(peerIOAdapter.disposed === false) {
+                            peerIOAdapter.emit('changeCollaboratorUsername', data.data);
+                        }
+                        break;
+                    case 'broadcastParole' :
+                        if(peerIOAdapter.disposed === false) {
+                            peerIOAdapter.emit('receiveParole', data.data);
+                        }
+                        break;
+                    case 'connect' :
+                        if(peerIOAdapter.disposed === false) {
+                            peerIOAdapter.emit('connect');
+                        }
+                        break;
+                    case 'disconnect' :
+                        //TODO
+                        if(peerIOAdapter.disposed === false) {
+                            peerIOAdapter.emit('connect');
+                        }
+                        break;
+                    case 'userJoin' :
+                        if(peerIOAdapter.disposed === false) {
+                            peerIOAdapter.emit('receiveUserJoin', data.data);
+                        }
+                        break;
+                    case 'userLeft' :
+                        if(peerIOAdapter.disposed === false) {
+                            peerIOAdapter.emit('receiveUserLeft', data.data);
+                        }
+                        break;
+                    case 'joinDoc' :
+                        peerIOAdapter.coordinator.giveCopy(data.data);
+                        break;
+                    default :
+                        console.log("handleEvent : ERROR !");
+                        break;
+                }
             }
+        }catch(e){
+            console.log("ERROR JSON PARSING");
         }
+        
     }
 
     function addCollaborator(remoteId){
-        console.log("Add collaborator");
-        console.log(remoteId);
         var connection = peerIOAdapter.peer.connect(remoteId);
-        //var data = new Data('userJoin', )
         connection.on('open', function() {
             connect(connection);
         });
     }
 
-    this.socketServer.on('infoPeerIDs', function(inforPeerIds){
+    this.socketServer.on('infoPeerIDs', function(infoPeerIds){
+        /* Receiving informations from server
+            infoPeerIds = {
+                peers : [], //remote peers already connected to the room
+                replicaNumber //replica number of the current peer given by the server
+            }
+         */
         peerIOAdapter.emit('connect');
-        console.log(inforPeerIds);
-        var peerIds = inforPeerIds.peers;
-        peerIOAdapter.replicaNumber = inforPeerIds.replicaNumber;
+        console.log(infoPeerIds);
+        
+        var peerIds = infoPeerIds.peers;
+
+        peerIOAdapter.replicaNumber = infoPeerIds.replicaNumber;
         peerIOAdapter.username = "User " + peerIOAdapter.replicaNumber;
+        
         peerIOAdapter.defaultInfoUsers = {};
         peerIOAdapter.defaultInfoUsers[peerIOAdapter.replicaNumber] = {
                 cursorIndex: 0,
                 selections: [],
                 username: peerIOAdapter.username
             };
+        
         if(peerIds.length === 0){
             peerIOAdapter.first = true;
             peerIOAdapter.joinDoc = true;
             peerIOAdapter.coordinator.giveCopy(null);
+            
             var data = {};
             data.replicaNumber = peerIOAdapter.replicaNumber;
             data.infosUsers = peerIOAdapter.defaultInfoUsers;
             peerIOAdapter.emit('receiveDocPeer', data);
         }
-        console.log(peerIOAdapter.replicaNumber);
         for(var i = 0; i < peerIds.length; i++){
             console.log("Add Peer : " + peerIds[i]);
             var remoteId = peerIds[i];
@@ -1859,7 +1862,6 @@ PeerIOAdapter.prototype.getPeer = function(peerId) {
 PeerIOAdapter.prototype.getReplicaNumber = function(peerId) {
     for (var i = 0; i < this.peers.length; i++) {
         if(this.peers[i].connection.peer === peerId){
-            console.log("plouf");
             console.log(this.peers[i]);
             return this.peers[i].replicaNumber;
         }
@@ -2062,7 +2064,7 @@ SocketIOAdapter.prototype.send = function (logootSOperations) {
         'logootSOperations': logootSOperations,
         'lastModificationDate': new Date()
     };
-    if(this.socket.socket.connected === true) {
+    if(this.socket.connected === true) {
         this.socket.emit('sendOps', obj, function (result) {
             if(result.error === false) {
                 socketIOAdapter.emit('ack', { length: result.length });
