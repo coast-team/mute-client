@@ -1162,7 +1162,7 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
             infosUsersModule.infosUsers = temp;
         };
 
-        //network.on('receiveDoc', joinDoc);
+        network.on('receiveInfoUser', joinDoc);
         network.on('receiveDocPeer', joinDoc);
         network.on('addUser', function(replicaNumber, username){
             infosUsersModule.addUser(replicaNumber, username);
@@ -1576,9 +1576,9 @@ PeerIOAdapter.prototype.createSocket = function () {
     };
 
     this.socketServer = io.connect(location.origin, connOptions);
-
-    //this.peer = new Peer({key: 'lwjd5qra8257b9', debug : true}); // actually using a foreign signaling server
-    this.peer = new Peer('someid', {host: '/', port: 8080, path: '/peerjs'});
+    //var peerServerId = Math.floor(Math.random()*100000).toString();
+    this.peer = new Peer({key: 'lwjd5qra8257b9', debug : true}); // actually using a foreign signaling server
+    //this.peer = new Peer(peerServerId, {host: '/', port: 8080, path: '/peerjs'});
     this.peer.on('open', function(id){
         peerIOAdapter.peerId = id;
         var infoPeer = {
@@ -1723,7 +1723,10 @@ PeerIOAdapter.prototype.createSocket = function () {
 
     function addCollaborator(remoteId){
         var connection = peerIOAdapter.peer.connect(remoteId);
+        console.log("Add collaborator");
+        console.log(connection);
         connection.on('open', function() {
+            console.log("OPEN");
             connect(connection);
         });
     }
@@ -1972,6 +1975,7 @@ SocketIOAdapter.prototype.createSocket = function () {
         console.log(data);
         if(socketIOAdapter.disposed === false) {
             socketIOAdapter.emit('receiveDoc', data);
+            socketIOAdapter.emit('receiveInfoUser', data);
         }
     });
 
