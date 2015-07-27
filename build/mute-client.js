@@ -477,8 +477,6 @@ var Coordinator = function (docID, serverDB) {
     this.updateLastModificationDateTimeout = null;
 
     this.localOperationHandler = function (data) {
-        console.log("local op !");
-        console.log(data);
         if(coordinator.disposed === false) {
             var action = data.operation.action;
             var index = data.operation.index;
@@ -512,7 +510,6 @@ Coordinator.prototype.init = function () {
     .done(function (results) {
         var doc;
         if(results.length === 0) {
-            console.log("BLOB");
             // New doc, add it to the DB
             doc = {
                 docID: coordinator.docID,
@@ -531,7 +528,6 @@ Coordinator.prototype.init = function () {
             });
         }
         else {
-            console.log("BLOG");
             // Retrieve the data stored
             doc = results[0];
             coordinator.creationDate = doc.creationDate;
@@ -847,8 +843,6 @@ Coordinator.prototype.giveCopy = function(data) {
     args.lastModificationDate = this.lastModificationDate;
     args.creationDate = this.creationDate;
     args.history = this.history;
-    console.log("give copy !!");
-    console.log(args);
     if(data !== null){
         args.callerID = data;
         this.emit('doc', args);
@@ -859,8 +853,6 @@ Coordinator.prototype.giveCopy = function(data) {
 
 };
 Coordinator.prototype.join = function (json) {
-    console.log("JOIN");
-    console.log(json);
     var coordinator = this;
 
     var temp;
@@ -877,7 +869,6 @@ Coordinator.prototype.join = function (json) {
     }
 
     if(json.ropes !== null && json.ropes !== undefined) {
-        console.log("bobo");
         // Have to use a var temp in case of replicating the coordinator's ropes (offline-mode)
         temp = new LogootSRopes(this.replicaNumber);
         temp.copyFromJSON(json.ropes);
@@ -1385,7 +1376,6 @@ InfosUsersModule.prototype.updateRemoteInfosUsers = function () {
 };
 
 InfosUsersModule.prototype.addUser = function (replicaNumber, username) {
-    console.log("BIM BADA BOUM !!");
     this.infosUsers[replicaNumber] = {
         username: username,
         cursorIndex: 0,
@@ -1600,7 +1590,7 @@ PeerIOAdapter.prototype.createSocket = function () {
             
             connection.on('close', function(){
                 //connection closing
-                var replicaNumber = peerIOAdapter.getReplicaNumber(connection.peer); 
+                var replicaNumber = peerIOAdapter.getReplicaNumber(connection.peer);
                 peerIOAdapter.emit('removeUser', replicaNumber);
                 this.close();
                 var index = peerIOAdapter.peers.indexOf(this);
