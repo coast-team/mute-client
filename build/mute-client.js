@@ -20,11 +20,12 @@ var Mute = {
 	Coordinator: _dereq_('./lib/coordinator'),
     SocketIOAdapter: _dereq_('./lib/socket-io-adapter'),
     AceEditorAdapter: _dereq_('./lib/ace-editor-adapter'),
-    InfosUsersModule: _dereq_('./lib/infos-users')
+    InfosUsersModule: _dereq_('./lib/infos-users'),
+    PeerIOAdapter: _dereq_('./lib/peer-io-adapter')
 };
 
 module.exports = Mute;
-},{"./lib/ace-editor-adapter":2,"./lib/coordinator":3,"./lib/infos-users":4,"./lib/socket-io-adapter":5}],2:[function(_dereq_,module,exports){
+},{"./lib/ace-editor-adapter":2,"./lib/coordinator":3,"./lib/infos-users":4,"./lib/peer-io-adapter":5,"./lib/socket-io-adapter":6}],2:[function(_dereq_,module,exports){
 /*
  *	Copyright 2014 Matthieu Nicolas
  *
@@ -401,11 +402,11 @@ AceEditorAdapter.prototype.onCoordinatorDisposedHandler = function (data) {
 };
 
 module.exports = AceEditorAdapter;
-},{"events":6}],3:[function(_dereq_,module,exports){
+},{"events":7}],3:[function(_dereq_,module,exports){
 /*
- *	Copyright 2014 Matthieu Nicolas
+ *  Copyright 2014 Matthieu Nicolas
  *
- *	This file is part of Mute-client.
+ *  This file is part of Mute-client.
  *
  *  Mute-client is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -434,568 +435,591 @@ var LogootSAdd = _dereq_('mute-structs').LogootSAdd;
 var LogootSDel = _dereq_('mute-structs').LogootSDel;
 
 var Coordinator = function (docID, serverDB) {
-	var coordinator = this;
+    var coordinator = this;
 
-	// Attributes stored into the DB
-	this.docID = docID;
-	this.creationDate = new Date();
-	this.history = [];
-	this.lastModificationDate = new Date();
-	this.replicaNumber = -1;
-	this.clock = 0;
-	this.ropes = null;
-	this.bufferLocalLogootSOp = []; // Buffer contenant les LogootSOperations locales actuellement non ack
-	this.mode = ONLINE_MODE;
-	// --------------------------------
+    // Attributes stored into the DB
+    this.docID = docID;
+    this.creationDate = new Date();
+    this.history = [];
+    this.lastModificationDate = new Date();
+    this.replicaNumber = -1;
+    this.clock = 0;
+    this.ropes = new LogootSRopes();
+    this.bufferLocalLogootSOp = []; // Buffer contenant les LogootSOperations locales actuellement non ack
+    this.mode = ONLINE_MODE;
+    // --------------------------------
 
-	this.disposed = false;
+    this.disposed = false;
 
-	this.changed = false;
-	this.flagDB = false;
-	this.readOnlyMode = false;
+    this.changed = false;
+    this.flagDB = false;
+    this.readOnlyMode = false;
 
 
-	this.bufferLogootSOp = []; 		// Buffer contenant les LogootSOperations distantes actuellement non traitées
-	this.bufferTextOp = [];			// Buffer contenant les TextOperations locales actuellement non converties en LogootSOperations
-	
-	this.prevOp = false;	// Type de la dernière opération
-	this.prevOpPos = -1;	// Position de la dernière opération
-	this.posCursor = 0;		// Position 'actuelle' du curseur
-	this.viewTopRow = 0;	// Numéro de la ligne actuellement au sommet de la vue
-	this.busy = false;		// Flag indiquant si l'utilisateur a saisi qqch depuis 1 sec
-	this.flag = false;		// Flag évitant d'appeler simultanément plusieurs fois la même fonction
-	
-	this.network = null;
-	this.editor = null;
-	this.timerTextOp = null;
-	this.serverDB = serverDB;
+    this.bufferLogootSOp = [];      // Buffer contenant les LogootSOperations distantes actuellement non traitées
+    this.bufferTextOp = [];         // Buffer contenant les TextOperations locales actuellement non converties en LogootSOperations
 
-	this.intervalCleanBufferTextOp = null;
-	this.intervalCleanBufferLogootSOp = null;
+    this.prevOp = false;    // Type de la dernière opération
+    this.prevOpPos = -1;    // Position de la dernière opération
+    this.posCursor = 0;     // Position 'actuelle' du curseur
+    this.viewTopRow = 0;    // Numéro de la ligne actuellement au sommet de la vue
+    this.busy = false;      // Flag indiquant si l'utilisateur a saisi qqch depuis 1 sec
+    this.flag = false;      // Flag évitant d'appeler simultanément plusieurs fois la même fonction
 
-	this.updateLastModificationDateTimeout = null;
+    this.network = null;
+    this.editor = null;
+    this.timerTextOp = null;
+    this.serverDB = serverDB;
 
-	this.localOperationHandler = function (data) {
-		if(coordinator.disposed === false) {
-			var action = data.operation.action;
-			var index = data.operation.index;
-			var text = data.operation.text;
-			
-			coordinator.addBufferTextOp({ action: action, index: index, text: text });
-			coordinator.updateLastModificationDate(new Date().valueOf());
-		}
-	};
+    this.intervalCleanBufferTextOp = null;
+    this.intervalCleanBufferLogootSOp = null;
+
+    this.updateLastModificationDateTimeout = null;
+
+    this.localOperationHandler = function (data) {
+        console.log("local op !");
+        console.log(data);
+        if(coordinator.disposed === false) {
+            var action = data.operation.action;
+            var index = data.operation.index;
+            var text = data.operation.text;
+
+            coordinator.addBufferTextOp({ action: action, index: index, text: text });
+            coordinator.updateLastModificationDate(new Date().valueOf());
+        }
+    };
 
 };
 
 Coordinator.prototype.__proto__ = events.EventEmitter.prototype;
 
 Coordinator.prototype.init = function () {
-	var coordinator = this;
-	var callback = function () {
-		if(coordinator.mode === ONLINE_MODE && coordinator.network !== null && coordinator.network !== undefined) {
-			// Wait for the server's current version
-			coordinator.emit('initNetwork');
-		}
-		else {
-			// Allow the user to edit the document offline
-			coordinator.join(coordinator);
-		}
-	};
+    var coordinator = this;
+    var callback = function () {
+        if(coordinator.mode === ONLINE_MODE && coordinator.network !== null && coordinator.network !== undefined) {
+            // Wait for the server's current version
+            coordinator.emit('initNetwork');
+        }
+        else {
+            // Allow the user to edit the document offline
+            coordinator.join(coordinator);
+        }
+    };
 
-	this.serverDB.models.query()
-	.filter('docID', this.docID)
-	.execute()
-	.done(function (results) {
-		var doc;
-		if(results.length === 0) {
-			// New doc, add it to the DB
-			doc = {
-				docID: coordinator.docID,
-				creationDate: coordinator.creationDate,
-				history: coordinator.history,
-				lastModificationDate: coordinator.lastModificationDate,
-				replicaNumber: coordinator.replicaNumber,
-				clock: coordinator.clock,
-				ropes: coordinator.ropes,
-				bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp,
-				mode: ONLINE_MODE,
-			};
-			coordinator.serverDB.models.add(doc)
-			.done(function (item) {
-				callback();
-			});
-		}
-		else {
-			// Retrieve the data stored
-			doc = results[0];
-			coordinator.creationDate = doc.creationDate;
-			coordinator.history = doc.history;
-			coordinator.lastModificationDate = doc.lastModificationDate;
-			coordinator.replicaNumber = doc.replicaNumber;
-			coordinator.clock = doc.clock;
-			coordinator.ropes = doc.ropes;
-			coordinator.bufferLocalLogootSOp = doc.bufferLocalLogootSOp;
-			coordinator.mode = doc.mode;
-			callback();
-		}
-	});
+    this.serverDB.models.query()
+    .filter('docID', this.docID)
+    .execute()
+    .done(function (results) {
+        var doc;
+        if(results.length === 0) {
+            // New doc, add it to the DB
+            doc = {
+                docID: coordinator.docID,
+                creationDate: coordinator.creationDate,
+                history: coordinator.history,
+                lastModificationDate: coordinator.lastModificationDate,
+                replicaNumber: coordinator.replicaNumber,
+                clock: coordinator.clock,
+                ropes: coordinator.ropes,
+                bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp,
+                mode: ONLINE_MODE,
+            };
+            coordinator.serverDB.models.add(doc)
+            .done(function (item) {
+                callback();
+            });
+        }
+        else {
+            // Retrieve the data stored
+            doc = results[0];
+            coordinator.creationDate = doc.creationDate;
+            coordinator.history = doc.history;
+            coordinator.lastModificationDate = doc.lastModificationDate;
+            coordinator.replicaNumber = doc.replicaNumber;
+            coordinator.clock = doc.clock;
+            coordinator.ropes = doc.ropes;
+            coordinator.bufferLocalLogootSOp = doc.bufferLocalLogootSOp;
+            coordinator.mode = doc.mode;
+            callback();
+        }
+    });
 
-	this.intervalChanged = setInterval(function () {
-		if(coordinator.changed === true) {
-			coordinator.updateDoc();
-		}
-	}, 1000);
+    this.intervalChanged = setInterval(function () {
+        if(coordinator.changed === true) {
+            coordinator.updateDoc();
+        }
+    }, 1000);
 };
 
 Coordinator.prototype.setEditor = function (editor) {
-	var coordinator = this;
+    var coordinator = this;
 
-	this.editor = editor;
+    this.editor = editor;
 
-	this.editor.on('cursor', function (posCursor) {
-		if(coordinator.disposed === false) {
-			coordinator.posCursor = posCursor;
-		}
-	});
-	this.editor.on('scroll', function (viewTopRow) {
-		if(coordinator.disposed === false) { 
-			coordinator.viewTopRow = viewTopRow; 
-		}
-	});
+    this.editor.on('cursor', function (posCursor) {
+        if(coordinator.disposed === false) {
+            coordinator.posCursor = posCursor;
+        }
+    });
+    this.editor.on('scroll', function (viewTopRow) {
+        if(coordinator.disposed === false) {
+            coordinator.viewTopRow = viewTopRow;
+        }
+    });
 
-	this.editor.on('readOnlyModeOn', function () {
-		if(coordinator.disposed === false) {
-			coordinator.readOnlyMode = true;
-		}
-	});
+    this.editor.on('readOnlyModeOn', function () {
+        if(coordinator.disposed === false) {
+            coordinator.readOnlyMode = true;
+        }
+    });
 
-	this.editor.on('readOnlyModeOff', function () {
-		if(coordinator.disposed === false) {
-			coordinator.readOnlyMode = false;
-			coordinator.emit('initEditor', { str: coordinator.ropes.str });
-		}
-	});
+    this.editor.on('readOnlyModeOff', function () {
+        if(coordinator.disposed === false) {
+            coordinator.readOnlyMode = false;
+            coordinator.emit('initEditor', { str: coordinator.ropes.str });
+        }
+    });
 };
 
 Coordinator.prototype.setNetwork = function (network) {
-	var coordinator = this;
-	var content;
-	var replicaNumber;
+    var coordinator = this;
+    var content;
+    var replicaNumber;
 
-	this.network = network;
+    this.network = network;
 
-	this.network.on('receiveDoc', function (args) {
-		if(coordinator.disposed === false) { 
-			coordinator.join(args);
-		}
-	});
-	this.network.on('receiveOps', function (data) {
-		if(coordinator.disposed === false) {
-			Utils.pushAll(coordinator.bufferLogootSOp, data.logootSOperations);
-		}
-	});
-	this.network.on('ack', function (data) {
-		if(coordinator.disposed === false) {
-			if(data.length > 0) {
-				coordinator.bufferLocalLogootSOp = coordinator.bufferLocalLogootSOp.splice(data.length);
-				coordinator.changed = true;
-			}
-		}
-	});
-	this.network.on('connect', function () {
-		if(coordinator.disposed === false) {
-			coordinator.emit('queryDoc', { docID: coordinator.docID, replicaNumber: coordinator.replicaNumber, bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp });
-		}
-	});
+    this.network.on('receiveDoc', function (args) {
+        if(coordinator.disposed === false) {
+            coordinator.join(args);
+        }
+    });
+    this.network.on('receiveOps', function (data) {
+        if(coordinator.disposed === false) {
+            Utils.pushAll(coordinator.bufferLogootSOp, data.logootSOperations);
+        }
+    });
+    this.network.on('ack', function (data) {
+        if(coordinator.disposed === false) {
+            if(data.length > 0) {
+                coordinator.bufferLocalLogootSOp = coordinator.bufferLocalLogootSOp.splice(data.length);
+                coordinator.changed = true;
+            }
+        }
+    });
+    this.network.on('connect', function () {
+        if(coordinator.disposed === false) {
+            coordinator.emit('queryDoc', { docID: coordinator.docID, replicaNumber: coordinator.replicaNumber, bufferLocalLogootSOp: coordinator.bufferLocalLogootSOp });
+        }
+    });
 };
 
 Coordinator.prototype.addBufferTextOp = function (data) {
-	/**
-	 * 	Format attendu de data : 
-	 *	data = {
-	 *		action: Le type d'action réalisée (insertText, removeText, insertLines, removeLines)
-	 * 		index: La position à laquelle l'action a été réalisée dans le texte
-	 *		text: Le texte inséré ou supprimé, dans le cas d'un insertText ou removeText
-	 * 	}
-	 */
-	var coordinator = this;
+    /**
+     *  Format attendu de data :
+     *  data = {
+     *      action: Le type d'action réalisée (insertText, removeText, insertLines, removeLines)
+     *      index: La position à laquelle l'action a été réalisée dans le texte
+     *      text: Le texte inséré ou supprimé, dans le cas d'un insertText ou removeText
+     *  }
+     */
+    var coordinator = this;
 
-	this.busy = true;
-	var newOperation = false;
+    this.busy = true;
+    var newOperation = false;
 
-	//Si on vient de changer d'action
-	if(this.prevOp !== data.action) {
-		//On va donc créer une nouvelle opération
-		newOperation = true;
-	}
+    //Si on vient de changer d'action
+    if(this.prevOp !== data.action) {
+        //On va donc créer une nouvelle opération
+        newOperation = true;
+    }
 
-	if(data.action === 'insertText')
-	{
-		if(this.prevOpPos !== data.index) {
-			newOperation = true;
-		}
-		if(newOperation) {
-			this.bufferTextOp.push(new TextInsert(data.index, data.text));
-		}
-		else {
-			//Sinon, on concatène la nouvelle chaîne à l'opération existante
-			Utils.getLast(this.bufferTextOp).content += data.text;
-		}
-		this.prevOpPos = data.index + data.text.length;
-		this.prevOp = 'insertText';
-	}
-	else if(data.action === 'removeText')
-	{
-		//Si on a pas déjà déterminé qu'il s'agit d'une nouvelle opération
-		if(!newOperation) {
-			//On vérifie si on peut fusionner cette opération avec la dernière opération
-			newOperation = true;
-			var last = Utils.getLast(this.bufferTextOp);
-			if(this.prevOp === 'removeText'
-				&& data.index + data.text.length >= last.offset
-				&& data.index <= last.offset) {
-				newOperation = false;
-			}
-		}
-		if(newOperation) {
-			this.bufferTextOp.push(new TextDelete(data.index, data.text.length));
-		}
-		else {
-			last.length += data.text.length;
-			last.offset = data.index;
-		}
-		this.prevOpPos -= data.text.length;
-		this.prevOp = 'removeText';
-	}
-	else {
-		console.error('-- Impossible de convertir les modifications en TextOperations --');
-		console.error(data);
-	}
+    if(data.action === 'insertText')
+    {
+        if(this.prevOpPos !== data.index) {
+            newOperation = true;
+        }
+        if(newOperation) {
+            this.bufferTextOp.push(new TextInsert(data.index, data.text));
+        }
+        else {
+            //Sinon, on concatène la nouvelle chaîne à l'opération existante
+            Utils.getLast(this.bufferTextOp).content += data.text;
+        }
+        this.prevOpPos = data.index + data.text.length;
+        this.prevOp = 'insertText';
+    }
+    else if(data.action === 'removeText')
+    {
+        //Si on a pas déjà déterminé qu'il s'agit d'une nouvelle opération
+        if(!newOperation) {
+            //On vérifie si on peut fusionner cette opération avec la dernière opération
+            newOperation = true;
+            var last = Utils.getLast(this.bufferTextOp);
+            if(this.prevOp === 'removeText'
+                && data.index + data.text.length >= last.offset
+                && data.index <= last.offset) {
+                newOperation = false;
+            }
+        }
+        if(newOperation) {
+            this.bufferTextOp.push(new TextDelete(data.index, data.text.length));
+        }
+        else {
+            last.length += data.text.length;
+            last.offset = data.index;
+        }
+        this.prevOpPos -= data.text.length;
+        this.prevOp = 'removeText';
+    }
+    else {
+        console.error('-- Impossible de convertir les modifications en TextOperations --');
+        console.error(data);
+    }
 
-	if(newOperation === true) {
-		clearTimeout(this.timerTextOp);
-		this.timerTextOp = setTimeout(function() {
-			console.log('Fin des 1s de buffer, on envoie.');
-			coordinator.busy = false;
-			coordinator.cleanBufferTextOp();
-			coordinator.timerTextOp = null;
-		}, 1000);
-	}
+    if(newOperation === true) {
+        clearTimeout(this.timerTextOp);
+        this.timerTextOp = setTimeout(function() {
+            console.log('Fin des 1s de buffer, on envoie.');
+            coordinator.busy = false;
+            coordinator.cleanBufferTextOp();
+            coordinator.timerTextOp = null;
+        }, 1000);
+    }
 };
 
 Coordinator.prototype.cleanBufferTextOp = function () {
-	var logootSOperations;
-	var taille;
-	var i;
-	var to;
-	var content;
+    var logootSOperations;
+    var taille;
+    var i;
+    var to;
+    var content;
 
-	//On positionne un flag à true pour être sur de pas faire appel plusieurs fois à la même méthode simultanément
-	if(this.bufferTextOp.length > 0 && this.flag !== true) {
-		this.flag = true;
+    //On positionne un flag à true pour être sur de pas faire appel plusieurs fois à la même méthode simultanément
+    if(this.bufferTextOp.length > 0 && this.flag !== true) {
+        this.flag = true;
 
-		logootSOperations = [];
-		taille = this.bufferTextOp.length;
+        logootSOperations = [];
+        taille = this.bufferTextOp.length;
 
-		i = 1;
-		if(this.busy === false) {
-			//Si l'utilisateur n'est pas en train de travailler
-			//On consomme le buffer entièrement (une seule opération en théorie)
-			i = 0;
-			//Et on remet à 0 les paramètres de bufferisation
-			this.prevOpPos = -1;
-			this.prevOp = false;
-		}
-		for(i; i<taille; i++) {
-			to = this.bufferTextOp.shift();
-			// Add the text operation to the history
-			if(to.length != null && (to.offset != null || to.offset == 0)) {
-				// Deletion
-				to.deletion = this.ropes.str.substr(to.offset, to.length);
-			}
-			this.history.push(to);
-			logootSOperations.push(to.applyTo(this.ropes));
-		}
-		//Il faut maintenant envoyer les logootSOperations générées au serveur et aux autres peers
-		if(logootSOperations.length !== 0) {
-			//On stocke en local au cas où il y a une déconnexion
-			this.changed = true;
-			Utils.pushAll(this.bufferLocalLogootSOp, logootSOperations);
-			this.emit('operations', logootSOperations);
-		}
+        i = 1;
+        if(this.busy === false) {
+            //Si l'utilisateur n'est pas en train de travailler
+            //On consomme le buffer entièrement (une seule opération en théorie)
+            i = 0;
+            //Et on remet à 0 les paramètres de bufferisation
+            this.prevOpPos = -1;
+            this.prevOp = false;
+        }
+        for(i; i<taille; i++) {
+            to = this.bufferTextOp.shift();
+            // Add the text operation to the history
+            if(to.length != null && (to.offset != null || to.offset == 0)) {
+                // Deletion
+                to.deletion = this.ropes.str.substr(to.offset, to.length);
+            }
+            this.history.push(to);
+            logootSOperations.push(to.applyTo(this.ropes));
+        }
+        //Il faut maintenant envoyer les logootSOperations générées au serveur et aux autres peers
+        if(logootSOperations.length !== 0) {
+            //On stocke en local au cas où il y a une déconnexion
+            this.changed = true;
+            Utils.pushAll(this.bufferLocalLogootSOp, logootSOperations);
+            this.emit('operations', logootSOperations);
+        }
 
-		this.clock = this.ropes.clock;
-		this.flag = false;
-	}
+        this.clock = this.ropes.clock;
+        this.flag = false;
+    }
 };
 
 Coordinator.prototype.cleanBufferLogootSOp = function () {
-	var coordinator = this;
-	var i;
-	var temp;
-	var lo;
-	var tos;
-	var to;
-	var operations = [];
-	var res;
-	var diffCursor = 0;
-	var diffNbLines = 0;
-	var owner = 0;
+    var coordinator = this;
+    var i;
+    var temp;
+    var lo;
+    var tos;
+    var to;
+    var operations = [];
+    var res;
+    var diffCursor = 0;
+    var diffNbLines = 0;
+    var owner = 0;
 
-	while(!this.busy && this.flag !== true
-		&& this.bufferTextOp.length === 0 && this.bufferLogootSOp.length > 0 ) {
-		this.flag = true;
-		diffNbLines = Utils.occurrences(this.ropes.str, '\n');
-		if(this.editor !== null) {
-			this.editor.removeAllListeners('change');
-		}
-		temp = this.bufferLogootSOp.shift();
-		owner = temp.owner;
-		lo = this.generateLogootSOp(temp);
-		// Each LogootSOperation generates a TextOperations array when applied
-		tos = lo.execute(this.ropes);
-		for(i=0; i<tos.length; i++)
-		{
-			to = tos[i];
-			to.owner = owner;
-			if(to.length != null && (to.offset != null || to.offset == 0)) {
-				// Keep the deleted text for the history
-				to.deletion = this.ropes.str.substr(to.offset, to.length);
-			}
-			this.history.push(to);
-			operations.push(to);
+    while(!this.busy && this.flag !== true
+        && this.bufferTextOp.length === 0 && this.bufferLogootSOp.length > 0 ) {
+        this.flag = true;
+        diffNbLines = Utils.occurrences(this.ropes.str, '\n');
+        if(this.editor !== null) {
+            this.editor.removeAllListeners('change');
+        }
+        temp = this.bufferLogootSOp.shift();
+        owner = temp.owner;
+        lo = this.generateLogootSOp(temp);
+        // Each LogootSOperation generates a TextOperations array when applied
+        tos = lo.execute(this.ropes);
+        for(i=0; i<tos.length; i++)
+        {
+            to = tos[i];
+            to.owner = owner;
+            if(to.length != null && (to.offset != null || to.offset == 0)) {
+                // Keep the deleted text for the history
+                to.deletion = this.ropes.str.substr(to.offset, to.length);
+            }
+            this.history.push(to);
+            operations.push(to);
 
-			temp = this.applyTextOperation(this.ropes.str, to);
-			this.ropes.str = temp;
-		}
-		diffNbLines = Utils.occurrences(this.ropes.str, '\n') - diffNbLines;
+            temp = this.applyTextOperation(this.ropes.str, to);
+            this.ropes.str = temp;
+        }
+        diffNbLines = Utils.occurrences(this.ropes.str, '\n') - diffNbLines;
 
-		this.prevOpPos = -1;
-		this.prevOp = false;
-		this.flag = false;
+        this.prevOpPos = -1;
+        this.prevOp = false;
+        this.flag = false;
 
-		this.emit('remoteOperations', { operations: operations });
-		this.emit('update', { str: this.ropes.str, diffNbLines: diffNbLines, operations: tos });
-		
-		//this.emit('awareness', { nbLogootSOp: this.bufferLogootSOp.length });
-		if(this.editor !== null) {
-			this.editor.on('change', function (data) {
-				if(coordinator.disposed === false) {
-					coordinator.addBufferTextOp(data);
-					coordinator.updateLastModificationDate(new Date().valueOf());
-				}
-			});
-		}
-		coordinator.updateLastModificationDate(new Date().valueOf());
-		this.changed = true;
-	}
+        this.emit('remoteOperations', { operations: operations });
+        this.emit('update', { str: this.ropes.str, diffNbLines: diffNbLines, operations: tos });
+
+        //this.emit('awareness', { nbLogootSOp: this.bufferLogootSOp.length });
+        if(this.editor !== null) {
+            this.editor.on('change', function (data) {
+                if(coordinator.disposed === false) {
+                    coordinator.addBufferTextOp(data);
+                    coordinator.updateLastModificationDate(new Date().valueOf());
+                }
+            });
+        }
+        coordinator.updateLastModificationDate(new Date().valueOf());
+        this.changed = true;
+    }
 };
 
 Coordinator.prototype.generateLogootSOp = function (temp) {
-	// Must identify which type of logootSOperation it is
-	if(temp.id !== undefined && temp.l !== undefined && temp.id !== null && temp.l !== null) {
-			// Insertion
-			var id = new Identifier(temp.id.base, temp.id.last);
-			return new LogootSAdd(id, temp.l);
-	}
-	else if(temp.lid !== undefined && temp.lid !== null) {
-		// Deletion
-		var lid = [];
-		for(i=0; i<temp.lid.length; i++) {
-			lid.push(new IdentifierInterval(temp.lid[i].base, temp.lid[i].begin, temp.lid[i].end));
-		}
-		return new LogootSDel(lid);
-	}
+    // Must identify which type of logootSOperation it is
+    if(temp.id !== undefined && temp.l !== undefined && temp.id !== null && temp.l !== null) {
+            // Insertion
+            var id = new Identifier(temp.id.base, temp.id.last);
+            return new LogootSAdd(id, temp.l);
+    }
+    else if(temp.lid !== undefined && temp.lid !== null) {
+        // Deletion
+        var lid = [];
+        for(i=0; i<temp.lid.length; i++) {
+            lid.push(new IdentifierInterval(temp.lid[i].base, temp.lid[i].begin, temp.lid[i].end));
+        }
+        return new LogootSDel(lid);
+    }
 };
 
 Coordinator.prototype.applyTextOperation = function (str, to) {
-	// Must identify which type of text operation it is
-	if(to.content !== undefined && to.offset !== undefined && to.content !== null && to.offset !== null) {
-		// Insertion
-		str = Utils.insert(str, to.offset, to.content);
-	}
-	else if(to.length !== undefined && to.length !== null && to.offset !== undefined && to.offset !== null) {
-		// Deletion
-		str = Utils.del(str, to.offset, to.offset + to.length - 1);
-	}
-	return str;
+    // Must identify which type of text operation it is
+    if(to.content !== undefined && to.offset !== undefined && to.content !== null && to.offset !== null) {
+        // Insertion
+        str = Utils.insert(str, to.offset, to.content);
+    }
+    else if(to.length !== undefined && to.length !== null && to.offset !== undefined && to.offset !== null) {
+        // Deletion
+        str = Utils.del(str, to.offset, to.offset + to.length - 1);
+    }
+    return str;
 };
 
 Coordinator.prototype.applyReverseTextOperation = function (str, to) {
-	if(to.content !== undefined && to.offset !== undefined && to.content !== null && to.offset !== null) {
-		// Insertion so have to delete
-		str = Utils.del(str, to.offset, to.offset + to.content.length - 1);
-	}
-	else if(to.length !== undefined && to.length !== null && to.offset !== undefined && to.offset !== null) {
-		// Deletion so have to insert
-		str = Utils.insert(str, to.offset, to.deletion);
-	}
-	return str;
+    if(to.content !== undefined && to.offset !== undefined && to.content !== null && to.offset !== null) {
+        // Insertion so have to delete
+        str = Utils.del(str, to.offset, to.offset + to.content.length - 1);
+    }
+    else if(to.length !== undefined && to.length !== null && to.offset !== undefined && to.offset !== null) {
+        // Deletion so have to insert
+        str = Utils.insert(str, to.offset, to.deletion);
+    }
+    return str;
 };
+Coordinator.prototype.giveCopy = function(data) {
+    var args = {};
+    args.callerID = data;
+    args.bufferLogootSOp = this.bufferLogootSOp;
+    args.bufferLocalLogootSOp = this.bufferLocalLogootSOp;
+    args.ropes = this.ropes;
+    args.lastModificationDate = this.lastModificationDate;
+    args.creationDate = this.creationDate;
+    args.history = this.history;
+    console.log("give copy !!");
+    console.log(args);
+    if(data !== null){
+        args.callerID = data;
+        this.emit('doc', args);
+    }else{
+        this.emit('initDoc', args);
+    }
 
+
+};
 Coordinator.prototype.join = function (json) {
-	var coordinator = this;
+    console.log("JOIN");
+    console.log(json);
+    var coordinator = this;
 
-	var temp;
-	var content;
+    var temp;
+    var content;
 
-	json.docID = this.docID;	
+    json.docID = this.docID;
 
-	this.replicaNumber = json.replicaNumber;
-	coordinator.updateLastModificationDate(new Date(json.lastModificationDate).valueOf());
-	this.creationDate = json.creationDate;
+    this.replicaNumber = json.replicaNumber;
+    coordinator.updateLastModificationDate(new Date(json.lastModificationDate).valueOf());
+    this.creationDate = json.creationDate;
 
-	if(this.editor !== null) {
-		this.editor.removeListener('localOperation', this.localOperationHandler);
-	}
+    if(this.editor !== null) {
+        this.editor.removeListener('localOperation', this.localOperationHandler);
+    }
 
-	if(json.ropes !== null && json.ropes !== undefined) {
-		// Have to use a var temp in case of replicating the coordinator's ropes (offline-mode)
-		temp = new LogootSRopes(this.replicaNumber);
-		temp.copyFromJSON(json.ropes);
-		temp.clock = this.clock;
-		this.ropes = temp;
-	}
+    if(json.ropes !== null && json.ropes !== undefined) {
+        // Have to use a var temp in case of replicating the coordinator's ropes (offline-mode)
+        temp = new LogootSRopes(this.replicaNumber);
+        temp.copyFromJSON(json.ropes);
+        temp.clock = this.clock;
+        this.ropes = temp;
+    }
 
-	this.history = json.history;
+    this.history = json.history;
 
-	Utils.pushAll(this.bufferLogootSOp, json.bufferLogootSOp);
+    Utils.pushAll(this.bufferLogootSOp, json.bufferLogootSOp);
 
-	if(this.readOnlyMode === false) {
-		this.emit('initEditor', { str: this.ropes.str });
-	}
-	
-	this.emit('updateHistoryScrollerValue', { length: this.history.length });
+    if(this.readOnlyMode === false) {
+        this.emit('initEditor', { str: this.ropes.str });
+    }
 
-	/**
-	 * Ajout de la fonction générant des TextOperations à partir des saisies de l'utilisateur
-	 */
-	if(this.editor !== null) {
-		this.editor.on('localOperation', this.localOperationHandler);
-	}
-	
-	if(this.intervalCleanBufferTextOp === null && this.intervalCleanBufferLogootSOp === null) {
-		this.intervalCleanBufferTextOp = setInterval(function () {
-			coordinator.cleanBufferTextOp();
-		}, 250);
+    this.emit('updateHistoryScrollerValue', { length: this.history.length });
 
-		this.intervalCleanBufferLogootSOp = setInterval(function () {
-			coordinator.cleanBufferLogootSOp();
-		}, 250);
-	}
+    /**
+     * Ajout de la fonction générant des TextOperations à partir des saisies de l'utilisateur
+     */
+    if(this.editor !== null) {
+        this.editor.on('localOperation', this.localOperationHandler);
+    }
 
-	this.changed = true;
+    if(this.intervalCleanBufferTextOp === null && this.intervalCleanBufferLogootSOp === null) {
+        this.intervalCleanBufferTextOp = setInterval(function () {
+            coordinator.cleanBufferTextOp();
+        }, 250);
+
+        this.intervalCleanBufferLogootSOp = setInterval(function () {
+            coordinator.cleanBufferLogootSOp();
+        }, 250);
+    }
+
+    this.changed = true;
 };
 
 Coordinator.prototype.getHistoryLength = function () {
-	return this.history.length;
+    return this.history.length;
 };
 
 Coordinator.prototype.receive = function (logootSOperations) {
-	Utils.pushAll(this.bufferLogootSOp, logootSOperations);
-	this.emit('awareness', { nbLogootSOp: this.bufferLogootSOp.length });
+    Utils.pushAll(this.bufferLogootSOp, logootSOperations);
+    this.emit('awareness', { nbLogootSOp: this.bufferLogootSOp.length });
 };
 
 Coordinator.prototype.updateState = function (str, currentState, newState) {
-	var i;
-	if(newState === 0) {
-		return '';
-	}
-	if(newState > currentState) {
-		if(newState <= this.history.length) {
-			for(i=currentState; i<newState; i++) {
-				str = this.applyTextOperation(str, this.history[i], false);
-			}	
-		}
-	}
-	else if(newState < currentState) {
-		if(newState > 0) {
-			for(i=currentState-1; i>newState-1; i--) {
-				str = this.applyReverseTextOperation(str, this.history[i], false);
-			}
-		}
-	}
-	return str;
+    var i;
+    if(newState === 0) {
+        return '';
+    }
+    if(newState > currentState) {
+        if(newState <= this.history.length) {
+            for(i=currentState; i<newState; i++) {
+                str = this.applyTextOperation(str, this.history[i], false);
+            }
+        }
+    }
+    else if(newState < currentState) {
+        if(newState > 0) {
+            for(i=currentState-1; i>newState-1; i--) {
+                str = this.applyReverseTextOperation(str, this.history[i], false);
+            }
+        }
+    }
+    return str;
 };
 
 Coordinator.prototype.updateDoc = function () {
-	var coordinator = this;
-	var temp;
+    var coordinator = this;
+    var temp;
 
-	if(this.flagDB === false) {
-		this.flagDB = true;
-		this.changed = false;
-		temp = {
-			docID: this.docID,
-			creationDate: this.creationDate,
-			history: this.history,
-			lastModificationDate: this.lastModificationDate,
-			replicaNumber: this.replicaNumber,
-			clock: this.clock,
-			ropes: this.ropes,
-			bufferLocalLogootSOp: this.bufferLocalLogootSOp,
-		};
+    if(this.flagDB === false) {
+        this.flagDB = true;
+        this.changed = false;
+        temp = {
+            docID: this.docID,
+            creationDate: this.creationDate,
+            history: this.history,
+            lastModificationDate: this.lastModificationDate,
+            replicaNumber: this.replicaNumber,
+            clock: this.clock,
+            ropes: this.ropes,
+            bufferLocalLogootSOp: this.bufferLocalLogootSOp,
+        };
 
-		this.serverDB.models.query()
-		.filter('docID', temp.docID)
-		.modify({ replicaNumber: temp.replicaNumber, ropes: temp.ropes, history: temp.history, lastModificationDate: temp.lastModificationDate, clock: temp.clock, bufferLocalLogootSOp: temp.bufferLocalLogootSOp })
-		.execute()
-		.done(function (results) {
-			console.log('MàJé :p');
-			coordinator.flagDB = false;
-		});
-	}
+        this.serverDB.models.query()
+        .filter('docID', temp.docID)
+        .modify({ replicaNumber: temp.replicaNumber, ropes: temp.ropes, history: temp.history, lastModificationDate: temp.lastModificationDate, clock: temp.clock, bufferLocalLogootSOp: temp.bufferLocalLogootSOp })
+        .execute()
+        .done(function (results) {
+            console.log('MàJé :p');
+            coordinator.flagDB = false;
+        });
+    }
 };
 
 Coordinator.prototype.toOnlineMode = function () {
-	var coordinator = this;
-	this.mode = ONLINE_MODE;
+    var coordinator = this;
+    this.mode = ONLINE_MODE;
 
-	this.serverDB.models.query()
-	.filter('docID', this.docID)
-	.modify({ mode: ONLINE_MODE })
-	.execute()
-	.done(function (results) {
-		coordinator.emit('initNetwork');
-	});
+    this.serverDB.models.query()
+    .filter('docID', this.docID)
+    .modify({ mode: ONLINE_MODE })
+    .execute()
+    .done(function (results) {
+        coordinator.emit('initNetwork');
+    });
 };
 
 Coordinator.prototype.toOfflineMode = function () {
-	this.mode = OFFLINE_MODE;
-	this.serverDB.models.query()
-	.filter('docID', this.docID)
-	.modify({ mode: OFFLINE_MODE })
-	.execute()
-	.done(function (results) {
-		coordinator.emit('disconnect');
-	});
+    this.mode = OFFLINE_MODE;
+    this.serverDB.models.query()
+    .filter('docID', this.docID)
+    .modify({ mode: OFFLINE_MODE })
+    .execute()
+    .done(function (results) {
+        coordinator.emit('disconnect');
+    });
 };
 
 Coordinator.prototype.updateLastModificationDate = function (dateValue) {
-	var coordinator = this;
-	this.lastModificationDate = dateValue;
-	if(this.updateLastModificationDateTimeout === null) {
-		coordinator.updateLastModificationDateTimeout = setTimeout(function () {
-			coordinator.emit('updateLastModificationDate', { lastModificationDate: coordinator.lastModificationDate });
-			coordinator.updateLastModificationDateTimeout = null;
-		}, 1000);
-	};
+    var coordinator = this;
+    this.lastModificationDate = dateValue;
+    if(this.updateLastModificationDateTimeout === null) {
+        coordinator.updateLastModificationDateTimeout = setTimeout(function () {
+            coordinator.emit('updateLastModificationDate', { lastModificationDate: coordinator.lastModificationDate });
+            coordinator.updateLastModificationDateTimeout = null;
+        }, 1000);
+    };
 };
 
 Coordinator.prototype.dispose = function () {
-	var key;
+    var key;
 
-	this.emit('coordinatorDisposed', { str: this.ropes.str });
+    this.emit('coordinatorDisposed', { str: this.ropes.str });
 
-	clearInterval(this.intervalCleanBufferTextOp);
-	clearInterval(this.intervalCleanBufferLogootSOp);
-	clearInterval(this.intervalChanged);
+    clearInterval(this.intervalCleanBufferTextOp);
+    clearInterval(this.intervalCleanBufferLogootSOp);
+    clearInterval(this.intervalChanged);
 
-	for(key in this) {
+    for(key in this) {
         if(this.hasOwnProperty(key) === true) {
             if(key === 'disposed') {
-            	this.disposed = true;
+                this.disposed = true;
             }
             else {
                 this[key] = null;
@@ -1005,388 +1029,402 @@ Coordinator.prototype.dispose = function () {
 };
 
 module.exports = Coordinator;
-},{"events":6,"mute-structs":7,"mute-utils":23}],4:[function(_dereq_,module,exports){
+
+},{"events":7,"mute-structs":8,"mute-utils":24}],4:[function(_dereq_,module,exports){
 var events = _dereq_('events');
 
 var InfosUsersModule = function (docID, coordinator, editor, network, usernameManager, serverDB) {
-	var infosUsersModule = this;
+    var infosUsersModule = this;
 
-	this.docID = docID;
-	this.infosUsers = {
-		'-1': {
-			cursorIndex: 0,
-			selections: [],
-			username: 'Unknown user'
-		}
-	};
-	this.replicaNumber = -1;
-	this.updateTimeout = null;
-	this.readOnlyMode = false;
-	this.offlineMode = true;
-	this.disposed = false;
+    this.docID = docID;
+    this.infosUsers = {
+        '-1': {
+            cursorIndex: 0,
+            selections: [],
+            username: 'Unknown user'
+        }
+    };
+    this.replicaNumber = -1;
+    this.updateTimeout = null;
+    this.readOnlyMode = false;
+    this.offlineMode = true;
+    this.disposed = false;
 
-	this.coordinator = coordinator;
+    this.coordinator = coordinator;
 
-	// Coordinator signals the remote operations applied to the model
-	coordinator.on('remoteOperations', function (data) {
-		var operations;
-		if(infosUsersModule.disposed === false) {
-			operations = data.operations;
-			infosUsersModule.applyRemoteOperations(operations);
-		}
-	});
+    // Coordinator signals the remote operations applied to the model
+    coordinator.on('remoteOperations', function (data) {
+        var operations;
+        if(infosUsersModule.disposed === false) {
+            operations = data.operations;
+            infosUsersModule.applyRemoteOperations(operations);
+        }
+    });
 
-	coordinator.on('coordinatorDisposed', function () {
-		//infosUsersModule.coordinator = null;
-		if(infosUsersModule.disposed === false) {
-			infosUsersModule.onCoordinatorDisposedHandler();
-		}
-	});
+    coordinator.on('coordinatorDisposed', function () {
+        //infosUsersModule.coordinator = null;
+        if(infosUsersModule.disposed === false) {
+            infosUsersModule.onCoordinatorDisposedHandler();
+        }
+    });
 
-	this.editor = editor;
+    this.editor = editor;
 
-	editor.on('changeCursorAndSelections', function (data) {
-		if(infosUsersModule.disposed === false) {
-			var cursorIndex = data.infosUser.cursorIndex;
-			var selections = data.infosUser.selections;
+    editor.on('changeCursorAndSelections', function (data) {
+        if(infosUsersModule.disposed === false) {
+            var cursorIndex = data.infosUser.cursorIndex;
+            var selections = data.infosUser.selections;
 
-			data.replicaNumber = infosUsersModule.replicaNumber;
-			if(infosUsersModule.offlineMode === false) {
-				infosUsersModule.emit('changeLocalCursorAndSelections', data);
-			}
-			infosUsersModule.updateCursorAndSelections(infosUsersModule.replicaNumber, cursorIndex, selections);
-		}
-	});
+            data.replicaNumber = infosUsersModule.replicaNumber;
+            if(infosUsersModule.offlineMode === false) {
+                infosUsersModule.emit('changeLocalCursorAndSelections', data);
+            }
+            infosUsersModule.updateCursorAndSelections(infosUsersModule.replicaNumber, cursorIndex, selections);
+        }
+    });
 
-	// Editor signals the changes made by the user to the document
-	editor.on('localOperation', function (data) {
-		var action;
-		var index;
-		var text;
-		if(infosUsersModule.disposed === false) {
-			action = data.operation.action;
-			index = data.operation.index;
-			text = data.operation.text;
-			infosUsersModule.applyLocalOperation(action, index, text);
-		}
-	});
+    // Editor signals the changes made by the user to the document
+    editor.on('localOperation', function (data) {
+        var action;
+        var index;
+        var text;
+        if(infosUsersModule.disposed === false) {
+            action = data.operation.action;
+            index = data.operation.index;
+            text = data.operation.text;
+            infosUsersModule.applyLocalOperation(action, index, text);
+        }
+    });
 
     editor.on('readOnlyModeOn', function () {
-    	if(infosUsersModule.disposed === false) {
-	        infosUsersModule.readOnlyMode = true;
-	        infosUsersModule.emit('updateRemoteIndicators', { infosUsers: {} });
-    	}
+        if(infosUsersModule.disposed === false) {
+            infosUsersModule.readOnlyMode = true;
+            infosUsersModule.emit('updateRemoteIndicators', { infosUsers: {} });
+        }
     });
 
     editor.on('readOnlyModeOff', function () {
         if(infosUsersModule.disposed === false) {
-        	infosUsersModule.readOnlyMode = false;
-        	infosUsersModule.updateRemoteInfosUsers();
-    	}
+            infosUsersModule.readOnlyMode = false;
+            infosUsersModule.updateRemoteInfosUsers();
+        }
     });
 
-	if(network !== null && network !== undefined) {
-		this.network = network;
+    if(network !== null && network !== undefined) {
+        this.network = network;
 
-		var joinDoc = function (data) {
-			var replicaNumber;
-			var infosUser;
+        var joinDoc = function (data) {
+            var replicaNumber;
+            var infosUser;
 
-			infosUsersModule.replicaNumber = data.replicaNumber;
-			delete infosUsersModule.infosUsers['-1'];
+            infosUsersModule.replicaNumber = data.replicaNumber;
+            delete infosUsersModule.infosUsers['-1'];
 
-			for(replicaNumber in data.infosUsers) {
-				infosUser = data.infosUsers[replicaNumber];
-				infosUsersModule.infosUsers[replicaNumber] = {
-					cursorIndex: infosUser.cursorIndex,
-					selections: infosUser.selections,
-					username: infosUser.username
-				};
-			}
+            for(replicaNumber in data.infosUsers) {
+                infosUser = data.infosUsers[replicaNumber];
+                infosUsersModule.infosUsers[replicaNumber] = {
+                    cursorIndex: infosUser.cursorIndex,
+                    selections: infosUser.selections,
+                    username: infosUser.username
+                };
+            }
 
-			infosUsersModule.updateLocalUsername(infosUsersModule.infosUsers[infosUsersModule.replicaNumber].username);
+            infosUsersModule.updateLocalUsername(infosUsersModule.infosUsers[infosUsersModule.replicaNumber].username);
 
-			infosUsersModule.network.removeListener('receiveDoc', joinDoc);
-			infosUsersModule.network.on('receiveDoc', reconnectToDoc);
-		};
+            infosUsersModule.network.removeListener('receiveDoc', joinDoc);
+            infosUsersModule.network.on('receiveDoc', reconnectToDoc);
+        };
 
-		var reconnectToDoc = function (data) {
-			var replicaNumber;
-			var infosUser = infosUsersModule.getLocalInfosUser();
-			var temp = {};
+        var reconnectToDoc = function (data) {
+            var replicaNumber;
+            var infosUser = infosUsersModule.getLocalInfosUser();
+            var temp = {};
 
-			temp[infosUsersModule.replicaNumber] = {
-				cursorIndex: infosUser.cursorIndex,
-				selections: infosUser.selections,
-				username: infosUser.username
-			};
+            temp[infosUsersModule.replicaNumber] = {
+                cursorIndex: infosUser.cursorIndex,
+                selections: infosUser.selections,
+                username: infosUser.username
+            };
 
-			for(replicaNumber in data.infosUsers) {
-				if(parseInt(replicaNumber) !== parseInt(infosUsersModule.replicaNumber)) {
-					infosUser = data.infosUsers[replicaNumber];
-					temp[replicaNumber] = {
-						cursorIndex: infosUser.cursorIndex,
-						selections: infosUser.selections,
-						username: infosUser.username
-					};
-				}
-			}
+            for(replicaNumber in data.infosUsers) {
+                if(parseInt(replicaNumber) !== parseInt(infosUsersModule.replicaNumber)) {
+                    infosUser = data.infosUsers[replicaNumber];
+                    temp[replicaNumber] = {
+                        cursorIndex: infosUser.cursorIndex,
+                        selections: infosUser.selections,
+                        username: infosUser.username
+                    };
+                }
+            }
 
-			infosUsersModule.infosUsers = temp;
-		};
+            infosUsersModule.infosUsers = temp;
+        };
 
-		network.on('receiveDoc', joinDoc);
+        network.on('receiveInfoUser', joinDoc);
+        network.on('receiveDocPeer', joinDoc);
+        network.on('addUser', function(replicaNumber, username){
+            infosUsersModule.addUser(replicaNumber, username);
+        });
 
-		network.on('receiveUserJoin', function (data) {
-			if(infosUsersModule.disposed === false) {
-				var replicaNumber = data.replicaNumber;
-				var username = data.username;
+        network.on('removeUser', function(replicaNumber){
+            console.log("removeUser");
+            console.log(replicaNumber);
+            infosUsersModule.removeUser(replicaNumber);
+        });
 
-				infosUsersModule.emit('addCollaborator', data);
-				infosUsersModule.addUser(replicaNumber, username);
-				infosUsersModule.updateRemoteInfosUsers();
-			}
-		});
+        network.on('receiveUserJoin', function (data) {
+            console.log('receiveUserJoin');
+            console.log(data);
+            if(infosUsersModule.disposed === false) {
+                var replicaNumber = data.replicaNumber;
+                var username = data.username;
 
-		network.on('receiveUserLeft', function (data) {
-			var replicaNumber = data.replicaNumber;
-			if(infosUsersModule.disposed === false) {
-				infosUsersModule.emit('removeCollaborator', data);
-				infosUsersModule.removeUser(replicaNumber);
-				infosUsersModule.updateRemoteInfosUsers();
-			}
-		});
+                infosUsersModule.emit('addCollaborator', data);
+                infosUsersModule.addUser(replicaNumber, username);
+                infosUsersModule.updateRemoteInfosUsers();
+            }
+        });
 
-		network.on('changeCollaboratorCursorAndSelections', function (data) {
-			var replicaNumber = data.replicaNumber;
-			var cursorIndex = data.infosUser.cursorIndex;
-			var selections = data.infosUser.selections;
+        network.on('receiveUserLeft', function (data) {
+            var replicaNumber = data.replicaNumber;
+            if(infosUsersModule.disposed === false) {
+                infosUsersModule.emit('removeCollaborator', data);
+                infosUsersModule.removeUser(replicaNumber);
+                infosUsersModule.updateRemoteInfosUsers();
+            }
+        });
 
-			if(infosUsersModule.disposed === false) {
-				infosUsersModule.updateCursorAndSelections(replicaNumber, cursorIndex, selections);
-				infosUsersModule.updateRemoteInfosUsers();
-			}
-		});
-		
-		network.on('changeCollaboratorUsername', function (data) {
-			var replicaNumber = data.replicaNumber;
-			var username = data.username;
+        network.on('changeCollaboratorCursorAndSelections', function (data) {
+            var replicaNumber = data.replicaNumber;
+            var cursorIndex = data.infosUser.cursorIndex;
+            var selections = data.infosUser.selections;
 
-			if(infosUsersModule.disposed === false) {
-				infosUsersModule.updateUsername(replicaNumber, username);
-				infosUsersModule.updateRemoteInfosUsers();
-			}
-		});
+            if(infosUsersModule.disposed === false) {
+                infosUsersModule.updateCursorAndSelections(replicaNumber, cursorIndex, selections);
+                infosUsersModule.updateRemoteInfosUsers();
+            }
+        });
+        
+        network.on('changeCollaboratorUsername', function (data) {
+            var replicaNumber = data.replicaNumber;
+            var username = data.username;
 
-	    network.on('connect', function () {
-	        if(infosUsersModule.disposed === false) {
-	        	infosUsersModule.offlineMode = false;
-	        	infosUsersModule.updateRemoteInfosUsers();
-	    	}
-	    });
+            if(infosUsersModule.disposed === false) {
+                infosUsersModule.updateUsername(replicaNumber, username);
+                infosUsersModule.updateRemoteInfosUsers();
+            }
+        });
 
-	    network.on('disconnect', function () {
-	        if(infosUsersModule.disposed === false) {
-		        infosUsersModule.offlineMode = true;
-		        infosUsersModule.emit('updateRemoteIndicators', { infosUsers: {} });
-		        infosUsersModule.emit('updateCollaboratorsList', { infosUsers: {} });
-	    	}
-	    });
+        network.on('connect', function () {
+            if(infosUsersModule.disposed === false) {
+                infosUsersModule.offlineMode = false;
+                infosUsersModule.updateRemoteInfosUsers();
+            }
+        });
 
-	    network.on('networkDisposed', function () {
-	    	if(infosUsersModule.disposed === false) { 
-	    		infosUsersModule.network = null;
-	    	}
-	    });
-	}
+        network.on('disconnect', function () {
+            if(infosUsersModule.disposed === false) {
+                infosUsersModule.offlineMode = true;
+                infosUsersModule.emit('updateRemoteIndicators', { infosUsers: {} });
+                infosUsersModule.emit('updateCollaboratorsList', { infosUsers: {} });
+            }
+        });
 
-	this.serverDB = serverDB;
+        network.on('networkDisposed', function () {
+            if(infosUsersModule.disposed === false) {
+                infosUsersModule.network = null;
+            }
+        });
+    }
 
-	this.initUsername();
+    this.serverDB = serverDB;
+
+    this.initUsername();
 };
 
 InfosUsersModule.prototype.__proto__ = events.EventEmitter.prototype;
 
 InfosUsersModule.prototype.initUsername = function () {
-	var infosUsersModule = this;
-	var username = null;
+    var infosUsersModule = this;
+    var username = null;
 
-	this.serverDB.models.query()
-	.filter('docID', this.docID)
-	.execute()
-	.done(function (results) {
-		if(results.length > 0) {
-			username = results[0].username;
-		}
-		infosUsersModule.updateLocalUsername(username);
-	});
+    this.serverDB.models.query()
+    .filter('docID', this.docID)
+    .execute()
+    .done(function (results) {
+        if(results.length > 0) {
+            username = results[0].username;
+        }
+        infosUsersModule.updateLocalUsername(username);
+    });
 };
 
 InfosUsersModule.prototype.getLocalInfosUser = function () {
-	return this.infosUsers[this.replicaNumber];
+    return this.infosUsers[this.replicaNumber];
 };
 
 InfosUsersModule.prototype.getUsername = function () {
-	return this.infosUsers[this.replicaNumber].username;
+    return this.infosUsers[this.replicaNumber].username;
 };
 
 InfosUsersModule.prototype.updateCursorAndSelections = function (replicaNumber, cursorIndex, selections) {
-	if(this.infosUsers[replicaNumber] !== null
-		&& this.infosUsers[replicaNumber] !== undefined) {
-		this.infosUsers[replicaNumber].cursorIndex = cursorIndex;
-		this.infosUsers[replicaNumber].selections = selections;
-	}
+    if(this.infosUsers[replicaNumber] !== null
+        && this.infosUsers[replicaNumber] !== undefined) {
+        this.infosUsers[replicaNumber].cursorIndex = cursorIndex;
+        this.infosUsers[replicaNumber].selections = selections;
+    }
 };
 
 InfosUsersModule.prototype.applyLocalOperation = function (action, index, text) {
-	var replicaNumber;
-	var infosUser;
+    var replicaNumber;
+    var infosUser;
 
-	for(replicaNumber in this.infosUsers) {
-		infosUser = this.infosUsers[replicaNumber];
-		// Since the 'changeCursorAndSelections' event will be triggered to update the user's infos
-		// We just have to update the collaborators' ones
-		if(parseInt(this.replicaNumber) !== parseInt(replicaNumber)) {
-			if(index < infosUser.cursorIndex) {
-				if(action === 'insertText') {
-					infosUser.cursorIndex += text.length;
-				}
-				else if(action === 'removeText') {
-					infosUser.cursorIndex -= text.length;
-				}
-			}
+    for(replicaNumber in this.infosUsers) {
+        infosUser = this.infosUsers[replicaNumber];
+        // Since the 'changeCursorAndSelections' event will be triggered to update the user's infos
+        // We just have to update the collaborators' ones
+        if(parseInt(this.replicaNumber) !== parseInt(replicaNumber)) {
+            if(index < infosUser.cursorIndex) {
+                if(action === 'insertText') {
+                    infosUser.cursorIndex += text.length;
+                }
+                else if(action === 'removeText') {
+                    infosUser.cursorIndex -= text.length;
+                }
+            }
 
-			for(i=0; i<infosUser.selections.length; i++) {
-				selection = infosUser.selections[i];
-				if(index < selection.start) {
-					if(action === 'insertText') {
-						selection.start += text.length;
-					}
-					else if(action === 'removeText') {
-						selection.start -= text.length;
-					}
-				}
+            for(i=0; i<infosUser.selections.length; i++) {
+                selection = infosUser.selections[i];
+                if(index < selection.start) {
+                    if(action === 'insertText') {
+                        selection.start += text.length;
+                    }
+                    else if(action === 'removeText') {
+                        selection.start -= text.length;
+                    }
+                }
 
-				if(index < selection.end) {
-					if(action === 'insertText') {
-						selection.end += text.length;
-					}
-					else if(action === 'removeText') {
-						selection.end -= text.length;
-					}
-				}
-			}
-		}
-	}
+                if(index < selection.end) {
+                    if(action === 'insertText') {
+                        selection.end += text.length;
+                    }
+                    else if(action === 'removeText') {
+                        selection.end -= text.length;
+                    }
+                }
+            }
+        }
+    }
 };
 
 InfosUsersModule.prototype.applyRemoteOperations = function (operations) {
-	var i, j;
-	var operation;
-	var replicaNumber;
-	var diffCursor = 0;
+    var i, j;
+    var operation;
+    var replicaNumber;
+    var diffCursor = 0;
 
-	for(i=0; i<operations.length; i++) {
-		operation = operations[i];
-		
-		if(operation.content !== undefined && operation.offset !== undefined && operation.content !== null && operation.offset !== null) {
-			// Insertion
-			diffCursor = operation.content.length;
-		}
-		else if(operation.length !== undefined && operation.length !== null && operation.offset !== undefined && operation.offset !== null) {
-			// Deletion
-			diffCursor = - operation.length;
-		}
+    for(i=0; i<operations.length; i++) {
+        operation = operations[i];
+        
+        if(operation.content !== undefined && operation.offset !== undefined && operation.content !== null && operation.offset !== null) {
+            // Insertion
+            diffCursor = operation.content.length;
+        }
+        else if(operation.length !== undefined && operation.length !== null && operation.offset !== undefined && operation.offset !== null) {
+            // Deletion
+            diffCursor = - operation.length;
+        }
 
-		for(replicaNumber in this.infosUsers) {
-			if(parseInt(replicaNumber) !== parseInt(operation.owner)) {
-				infosUser = this.infosUsers[replicaNumber];
-				if(operation.offset < infosUser.cursorIndex) {
-					infosUser.cursorIndex += diffCursor;
-				}
-				for(j=0; j<infosUser.selections.length; j++) {
-					selection = infosUser.selections[j];
-					if(operation.offset < selection.start) {
-						selection.start += diffCursor;
-					}
-					if(operation.offset < selection.end) {
-						selection.end += diffCursor;
-					}
-				}
-			}
-		}
-	}
+        for(replicaNumber in this.infosUsers) {
+            if(parseInt(replicaNumber) !== parseInt(operation.owner)) {
+                infosUser = this.infosUsers[replicaNumber];
+                if(operation.offset < infosUser.cursorIndex) {
+                    infosUser.cursorIndex += diffCursor;
+                }
+                for(j=0; j<infosUser.selections.length; j++) {
+                    selection = infosUser.selections[j];
+                    if(operation.offset < selection.start) {
+                        selection.start += diffCursor;
+                    }
+                    if(operation.offset < selection.end) {
+                        selection.end += diffCursor;
+                    }
+                }
+            }
+        }
+    }
 };
 
 InfosUsersModule.prototype.updateRemoteInfosUsers = function () {
-	var infosUsersModule = this;
-	var replicaNumber;
-	var infosUser;
-	var temp = {};
+    var infosUsersModule = this;
+    var replicaNumber;
+    var infosUser;
+    var temp = {};
 
-	if(this.updateTimeout === null) {
-		this.updateTimeout = setTimeout(function () {
-			for(replicaNumber in infosUsersModule.infosUsers) {
-				if(parseInt(replicaNumber) !== parseInt(infosUsersModule.replicaNumber) && parseInt(infosUsersModule.replicaNumber)>0) {
-					infosUser = infosUsersModule.infosUsers[replicaNumber];
-					temp[replicaNumber] = infosUser;
-				}
-			}
-			if(infosUsersModule.readOnlyMode === false && infosUsersModule.offlineMode === false) {
-				infosUsersModule.emit('updateRemoteIndicators', { infosUsers: temp });
-			}
-			if(infosUsersModule.offlineMode === false) {
-				infosUsersModule.emit('updateCollaboratorsList', { infosUsers: temp });
-			}
-			infosUsersModule.updateTimeout = null;
-		}, 100);
-	};
+    if(this.updateTimeout === null) {
+        this.updateTimeout = setTimeout(function () {
+            for(replicaNumber in infosUsersModule.infosUsers) {
+                if(parseInt(replicaNumber) !== parseInt(infosUsersModule.replicaNumber) && parseInt(infosUsersModule.replicaNumber)>0) {
+                    infosUser = infosUsersModule.infosUsers[replicaNumber];
+                    temp[replicaNumber] = infosUser;
+                }
+            }
+            if(infosUsersModule.readOnlyMode === false && infosUsersModule.offlineMode === false) {
+                infosUsersModule.emit('updateRemoteIndicators', { infosUsers: temp });
+            }
+            if(infosUsersModule.offlineMode === false) {
+                infosUsersModule.emit('updateCollaboratorsList', { infosUsers: temp });
+            }
+            infosUsersModule.updateTimeout = null;
+        }, 100);
+    };
 
 
 };
 
 InfosUsersModule.prototype.addUser = function (replicaNumber, username) {
-	this.infosUsers[replicaNumber] = {
-		username: username,
-		cursorIndex: 0,
-		selections: []
-	};
+    console.log("BIM BADA BOUM !!");
+    this.infosUsers[replicaNumber] = {
+        username: username,
+        cursorIndex: 0,
+        selections: []
+    };
 };
 
 InfosUsersModule.prototype.removeUser = function (replicaNumber) {
-	if(parseInt(this.replicaNumber) !== parseInt(replicaNumber)) {
-		delete this.infosUsers[replicaNumber];
-	}	
+    if(parseInt(this.replicaNumber) !== parseInt(replicaNumber)) {
+        delete this.infosUsers[replicaNumber];
+    }   
 };
 
 InfosUsersModule.prototype.updateLocalUsername = function (username) {
-	var infosUsersModule = this;
-	this.serverDB.models.query()
-	.filter('docID', this.docID)
-	.modify({ username: username })
-	.execute()
-	.done(function (results) {
-		infosUsersModule.infosUsers[infosUsersModule.replicaNumber].username = username;
-		infosUsersModule.emit('changeLocalUsername', { replicaNumber: infosUsersModule.replicaNumber, username: username });
-	});
+    var infosUsersModule = this;
+    this.serverDB.models.query()
+    .filter('docID', this.docID)
+    .modify({ username: username })
+    .execute()
+    .done(function (results) {
+        infosUsersModule.infosUsers[infosUsersModule.replicaNumber].username = username;
+        infosUsersModule.emit('changeLocalUsername', { replicaNumber: infosUsersModule.replicaNumber, username: username });
+    });
 };
 
 InfosUsersModule.prototype.updateUsername = function (replicaNumber, username) {
-	if(this.infosUsers[replicaNumber] !== null
-		&& this.infosUsers[replicaNumber] !== undefined) {
-		this.infosUsers[replicaNumber].username = username;
-	}
+    if(this.infosUsers[replicaNumber] !== null
+        && this.infosUsers[replicaNumber] !== undefined) {
+        this.infosUsers[replicaNumber].username = username;
+    }
 };
 
 InfosUsersModule.prototype.onCoordinatorDisposedHandler = function () {
-	var key;
+    var key;
 
-	this.emit('infosUsersModuleDisposed');
+    this.emit('infosUsersModuleDisposed');
 
-	for(key in this) {
+    for(key in this) {
         if(this.hasOwnProperty(key) === true) {
             if(key === 'disposed') {
-            	this.disposed = true;
+                this.disposed = true;
             }
             else {
                 this[key] = null;
@@ -1396,7 +1434,430 @@ InfosUsersModule.prototype.onCoordinatorDisposedHandler = function () {
 };
 
 module.exports = InfosUsersModule;
-},{"events":6}],5:[function(_dereq_,module,exports){
+},{"events":7}],5:[function(_dereq_,module,exports){
+var events = _dereq_('events');
+
+/*
+Data Object
+event : message context
+data : message content
+ */
+
+var Data = function(event, data){
+    this.event = event;
+    this.data = data;
+};
+
+/*
+PeerInfo Object
+Informations about remote peer
+connection : connection between the current and the remote peer
+replicaNumber : replica number of the remote peer
+ */
+
+var PeerInfo = function(connection){
+    this.connection = connection;
+    this.replicaNumber = null;
+};
+
+PeerInfo.prototype.setReplicaNumber = function(replicaNumber){
+    this.replicaNumber = replicaNumber;
+};
+
+/*
+PeerIOAdapter Object
+Initialize and manage web p2p network
+ */
+
+var PeerIOAdapter = function(coordinator){
+    var peerIOAdapter = this;
+
+    this.coordinator = coordinator; // coordinator of the current peer
+    this.peer = null; //peer object from peerJS API http://peerjs.com/
+    this.peers = []; //list of remote peers
+    this.peerId = null; //peerId of the current peer
+    this.socketServer = null;
+    this.connectionCreated = false;
+    this.infosUsersModule = null;
+    this.disposed = false;
+    this.joinDoc = false;
+    this.first = false;
+    this.replicaNumber = null; //replica number of the current peer
+    this.username = null; //username of current peer
+    this.defaultInfoUsers = null; //defaultInfosUsers genrated at the connection initialization
+
+    this.coordinator.on('initNetwork', function (data) {
+        if(peerIOAdapter.disposed === false) {
+            peerIOAdapter.toOnlineMode();
+        }
+    });
+
+    this.coordinator.on('queryDoc', function (data) {
+        if(peerIOAdapter.disposed === false) {
+            data.username = peerIOAdapter.infosUsersModule.getUsername();
+        }
+    });
+
+    this.coordinator.on('coordinatorDisposed', function (data) {
+        if(peerIOAdapter.disposed === false) {
+            peerIOAdapter.onCoordinatorDisposedHandler(data);
+        }
+    });
+    this.coordinator.on('doc', function (args){
+        //Give a copy of the document
+        console.log(args);
+        msg = {
+            ropes: args.ropes,
+            history: args.history,
+            bufferLogootSOp: args.bufferLogootSOp,
+            creationDate: args.creationDate,
+            lastModificationDate: args.lastModificationDate
+        };
+
+        var data = JSON.stringify(new Data('sendDoc', msg));
+
+        var connection = peerIOAdapter.getPeer(args.callerID );
+        console.log(connection);
+        if(connection !== null){
+            connection.send(data);
+        }
+
+    });
+
+
+    this.coordinator.on('initDoc', function (args){
+        msg = {
+            ropes: args.ropes,
+            history: args.history,
+            bufferLogootSOp: args.bufferLogootSOp,
+            creationDate: args.creationDate,
+            lastModificationDate: args.lastModificationDate
+        };
+        peerIOAdapter.emit('receiveDoc', msg);
+    });
+};
+
+PeerIOAdapter.prototype.__proto__ = events.EventEmitter.prototype;
+
+
+PeerIOAdapter.prototype.setInfosUsersModule = function(infosUsers){
+    var peerIOAdapter = this;
+    this.infosUsersModule = infosUsersModule;
+
+    infosUsersModule.on('changeLocalCursorAndSelections', function (data) {
+        data.replicaNumber = peerIOAdapter.replicaNumber;
+        if(peerIOAdapter.disposed === false) {
+            for (var i = 0; i < peerIOAdapter.peers.length; i++) {
+                var newData = JSON.stringify(new Data('broadcastCollaboratorCursorAndSelections', data));
+                peerIOAdapter.peers[i].connection.send(newData);
+            }
+        }
+    });
+
+    infosUsersModule.on('changeLocalUsername', function (data) {
+        data.replicaNumber = peerIOAdapter.replicaNumber;
+        if(peerIOAdapter.disposed === false) {
+            for (var i = 0; i < peerIOAdapter.peers.length; i++) {
+                var newData = JSON.stringify(new Data('broadcastCollaboratorUsername', data));
+                peerIOAdapter.peers[i].connection.send(newData);
+            }
+        }
+    });
+
+};
+
+PeerIOAdapter.prototype.createSocket = function () {
+    var peerIOAdapter = this;
+    this.peers = [];// empty the remote peers list
+    var connOptions = {
+        'sync disconnect on unload': true
+    };
+
+    this.socketServer = io.connect(location.origin, connOptions);
+    /*
+    You can use the signaling server set up on the mute server demo, to do that, you have just to uncomment the two following lines and comment the third
+    WARNING : some troubles were encountred with firefox browser
+    */
+    //var peerServerId = Math.floor(Math.random()*100000).toString();
+    //this.peer = new Peer(peerServerId, {host: '/', port: 8080, path: '/peerjs'}); //signaling server on mute demo server
+    this.peer = new Peer({key: 'lwjd5qra8257b9', debug : true}); // actually using a foreign signaling server
+    this.peer.on('open', function(id){
+        peerIOAdapter.peerId = id;
+        var infoPeer = {
+            docID : peerIOAdapter.coordinator.docID,
+            peerID : id
+        };
+        peerIOAdapter.socketServer.emit('newPeer', infoPeer);
+    });
+
+    function connect (connection){ //Initialize connection with remote peer
+        console.log('connection');
+        if(!peerIOAdapter.peerAlreadyExists(connection)){
+            console.log(connection);
+
+            var peerInfo = new PeerInfo(connection);
+            peerIOAdapter.peers.push(peerInfo);
+
+            connection.on('data', handleEvent); // data receiving
+
+            connection.on('close', function(){
+                //connection closing
+                var replicaNumber = peerIOAdapter.getReplicaNumber(connection.peer);
+                peerIOAdapter.emit('removeUser', replicaNumber);
+                this.close();
+                var index = peerIOAdapter.peers.indexOf(this);
+                peerIOAdapter.peers.splice(index, 1);
+            });
+
+            if(!peerIOAdapter.joinDoc && !peerIOAdapter.first){
+                peerIOAdapter.joinDoc = true;
+                var msg = JSON.stringify(new Data('joinDoc', peerIOAdapter.peerId));
+                connection.send(msg);
+            }
+            var data = {
+                peerId : peerIOAdapter.peerId,
+                replicaNumber : peerIOAdapter.replicaNumber,
+                username : peerIOAdapter.username
+            };
+            var request = JSON.stringify(new Data('queryUserInfo', data));
+            connection.send(request);
+        }
+    }
+
+    function handleEvent(args){
+        //manage data receiving
+        console.log('HandleEvent');
+        console.log(args);
+        try{
+            var data = JSON.parse(args);
+            if(data.event !== null && data.event !== undefined && peerIOAdapter.disposed === false){
+                switch(data.event){
+                    case 'sendOps':
+                        data.data.replicaNumber = peerIOAdapter.replicaNumber;
+                        peerIOAdapter.emit('receiveOps', data.data);
+                        break;
+                    case 'sendDoc':
+                            data.data.replicaNumber = peerIOAdapter.replicaNumber;
+                            data.data.infosUsers = peerIOAdapter.defaultInfoUsers;
+                            console.log('receiveOps');
+                            peerIOAdapter.emit('receiveDoc', data.data);
+                            peerIOAdapter.emit('receiveDocPeer', data.data);
+                        break;
+                    case 'queryUserInfo' :
+                        var peerId = data.data.peerId;
+                        peerIOAdapter.emit('addUser', data.data.replicaNumber, data.data.username);
+                        peerIOAdapter.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
+                        data = {
+                            peerId : peerIOAdapter.peerId,
+                            replicaNumber : peerIOAdapter.replicaNumber,
+                            username : peerIOAdapter.username
+                        };
+                        var msg = JSON.stringify(new Data('addUser', data));
+                        var connection = peerIOAdapter.getPeer(peerId );
+                        if(connection !== null){
+                            connection.send(msg);
+                        }
+                        break;
+                    case 'addUser' :
+                        console.log('addUser');
+                        peerIOAdapter.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
+                        peerIOAdapter.emit('addUser', data.data.replicaNumber, data.data.username);
+                        break;
+                    case 'broadcastCollaboratorCursorAndSelections':
+                        peerIOAdapter.emit('changeCollaboratorCursorAndSelections', data.data);
+                        break;
+                    case 'broadcastCollaboratorUsername' :
+                        peerIOAdapter.emit('changeCollaboratorUsername', data.data);
+                        break;
+                    case 'broadcastParole' :
+                        peerIOAdapter.emit('receiveParole', data.data);
+                        break;
+                    case 'connect' :
+                        peerIOAdapter.emit('connect');
+                        break;
+                    case 'userJoin' :
+                        peerIOAdapter.emit('receiveUserJoin', data.data);
+                        break;
+                    case 'userLeft' :
+                        peerIOAdapter.emit('receiveUserLeft', data.data);
+                        break;
+                    case 'joinDoc' :
+                        peerIOAdapter.coordinator.giveCopy(data.data);
+                        break;
+                    default :
+                        console.log('handleEvent : ERROR !');
+                        break;
+                }
+            }
+        }catch(e){
+            console.log('ERROR JSON PARSING');
+        }
+
+    }
+
+    function addCollaborator(remoteId){
+        var connection = peerIOAdapter.peer.connect(remoteId);
+        console.log("Add collaborator");
+        console.log(connection);
+        connection.on('open', function() {
+            console.log('OPEN');
+            connect(connection);
+        });
+    }
+
+    this.socketServer.on('infoPeerIDs', function(infoPeerIds){
+        /* Receiving informations from server
+            infoPeerIds = {
+                peers : [], //remote peers already connected to the room
+                replicaNumber //replica number of the current peer given by the server
+            }
+         */
+        peerIOAdapter.emit('connect');
+        console.log(infoPeerIds);
+
+        var peerIds = infoPeerIds.peers;
+
+        peerIOAdapter.replicaNumber = infoPeerIds.replicaNumber;
+        peerIOAdapter.username = "User " + peerIOAdapter.replicaNumber;
+
+        peerIOAdapter.defaultInfoUsers = {};
+        peerIOAdapter.defaultInfoUsers[peerIOAdapter.replicaNumber] = {
+                cursorIndex: 0,
+                selections: [],
+                username: peerIOAdapter.username
+            };
+
+        if(peerIds.length === 0){
+            peerIOAdapter.first = true;
+            peerIOAdapter.joinDoc = true;
+            peerIOAdapter.coordinator.giveCopy(null);
+
+            var data = {};
+            data.replicaNumber = peerIOAdapter.replicaNumber;
+            data.infosUsers = peerIOAdapter.defaultInfoUsers;
+            peerIOAdapter.emit('receiveDocPeer', data);
+        }
+        for(var i = 0; i < peerIds.length; i++){
+            console.log('Add Peer : ' + peerIds[i]);
+            var remoteId = peerIds[i];
+            addCollaborator(remoteId);
+        }
+    });
+
+    this.peer.on('connection', connect);
+
+    this.coordinator.on('operations', function (logootSOperations) {
+        if(peerIOAdapter.disposed === false) {
+            peerIOAdapter.send(logootSOperations);
+        }
+    });
+
+    this.coordinator.on('disconnect', function () {
+        if(peerIOAdapter.disposed === false) {
+            peerIOAdapter.toOfflineMode();
+        }
+    });
+
+    this.connectionCreated = true;
+    this.emit('connect');
+
+};
+
+
+PeerIOAdapter.prototype.peerAlreadyExists = function(connection){
+    for(var i = 0; i < this.peers.length; i++){
+        if(this.peers[i].peer === connection.peer){
+            return true;
+        }
+    }
+    return false;
+};
+
+PeerIOAdapter.prototype.toOnlineMode = function () {
+    this.createSocket();
+};
+
+PeerIOAdapter.prototype.toOfflineMode = function () {
+    if(this.socketServer !== null && this.socketServer !== undefined) {
+        this.socketServer.disconnect();
+        this.emptyPeers();
+    }
+
+};
+
+PeerIOAdapter.prototype.emptyPeers = function() {
+    for(var i = 0; i < this.peers.length; i ++){
+        this.peers[i].connection.close();
+    }
+    this.peers = [];
+};
+
+PeerIOAdapter.prototype.send = function (logootSOperations) {
+    var socketIOAdapter = this;
+    var obj = {
+        'logootSOperations': logootSOperations,
+        'lastModificationDate': new Date()
+    };
+    var data = new Data('sendOps', obj);
+    var newData = JSON.stringify(data);
+    for(var i = 0; i < this.peers.length; i++){
+        this.peers[i].connection.send(newData);
+    }
+};
+
+PeerIOAdapter.prototype.onCoordinatorDisposedHandler = function () {
+    var key;
+
+    this.emit('networkDisposed');
+
+    if(this.socket !== null && this.socket !== undefined) {
+        this.socket.disconnect();
+        this.emptyPeers();
+    }
+
+    for(key in this) {
+        if(this.hasOwnProperty(key) === true) {
+            if(key === 'disposed') {
+                this.disposed = true;
+            }
+            else {
+                this[key] = null;
+            }
+        }
+    }
+};
+
+PeerIOAdapter.prototype.getPeer = function(peerId) {
+    for (var i = 0; i < this.peers.length; i++) {
+        if(this.peers[i].connection.peer === peerId){
+            return this.peers[i].connection;
+        }
+    }
+    return null;
+};
+
+PeerIOAdapter.prototype.getReplicaNumber = function(peerId) {
+    for (var i = 0; i < this.peers.length; i++) {
+        if(this.peers[i].connection.peer === peerId){
+            console.log(this.peers[i]);
+            return this.peers[i].replicaNumber;
+        }
+    }
+    return null;
+};
+
+PeerIOAdapter.prototype.setReplicaNumber = function(peerID, replicaNumber) {
+    for (var i = 0; i < this.peers.length; i++) {
+        if(this.peers[i].connection.peer === peerID){
+            this.peers[i].setReplicaNumber(replicaNumber);
+            break;
+        }
+    }
+};
+
+module.exports = PeerIOAdapter;
+
+},{"events":7}],6:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -1458,9 +1919,10 @@ SocketIOAdapter.prototype.setInfosUsersModule = function (infosUsersModule) {
     this.infosUsersModule = infosUsersModule;
 
     infosUsersModule.on('changeLocalCursorAndSelections', function (data) {
+        console.log(data);
         if(socketIOAdapter.disposed === false) {
             if(socketIOAdapter.socket !== null && socketIOAdapter.socket !== undefined) {
-                socketIOAdapter.socket.emit('sendLocalInfosUser', data); 
+                socketIOAdapter.socket.emit('sendLocalInfosUser', data);
             }
         }
     });
@@ -1483,8 +1945,11 @@ SocketIOAdapter.prototype.createSocket = function () {
     this.socket = io.connect(location.origin, connOptions);
 
     this.socket.on('sendDoc', function (data) {
+        console.log('SEND DOC');
+        console.log(data);
         if(socketIOAdapter.disposed === false) {
             socketIOAdapter.emit('receiveDoc', data);
+            socketIOAdapter.emit('receiveInfoUser', data);
         }
     });
 
@@ -1499,18 +1964,18 @@ SocketIOAdapter.prototype.createSocket = function () {
             socketIOAdapter.emit('changeCollaboratorCursorAndSelections', data);
         }
     });
-    
+
     this.socket.on('broadcastCollaboratorUsername', function (data) {
         if(socketIOAdapter.disposed === false) {
             socketIOAdapter.emit('changeCollaboratorUsername', data);
         }
     });
-    
+
     this.socket.on('broadcastParole', function (data) {
         if(socketIOAdapter.disposed === false) {
             socketIOAdapter.emit('receiveParole', data);
         }
-    }); 
+    });
 
     this.coordinator.on('operations', function (logootSOperations) {
         if(socketIOAdapter.disposed === false) {
@@ -1577,7 +2042,7 @@ SocketIOAdapter.prototype.send = function (logootSOperations) {
         'logootSOperations': logootSOperations,
         'lastModificationDate': new Date()
     };
-    if(this.socket.socket.connected === true) {
+    if(this.socket.connected === true) {
         this.socket.emit('sendOps', obj, function (result) {
             if(result.error === false) {
                 socketIOAdapter.emit('ack', { length: result.length });
@@ -1609,7 +2074,7 @@ SocketIOAdapter.prototype.onCoordinatorDisposedHandler = function () {
 
 module.exports = SocketIOAdapter;
 
-},{"events":6}],6:[function(_dereq_,module,exports){
+},{"events":7}],7:[function(_dereq_,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -1669,10 +2134,8 @@ EventEmitter.prototype.emit = function(type) {
       er = arguments[1];
       if (er instanceof Error) {
         throw er; // Unhandled 'error' event
-      } else {
-        throw TypeError('Uncaught, unspecified "error" event.');
       }
-      return false;
+      throw TypeError('Uncaught, unspecified "error" event.');
     }
   }
 
@@ -1914,7 +2377,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],7:[function(_dereq_,module,exports){
+},{}],8:[function(_dereq_,module,exports){
 /*
  *	Copyright 2014 Matthieu Nicolas
  *
@@ -1933,7 +2396,7 @@ function isUndefined(arg) {
  */
 module.exports = _dereq_('./lib/index');
 
-},{"./lib/index":11}],8:[function(_dereq_,module,exports){
+},{"./lib/index":12}],9:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2079,7 +2542,7 @@ Identifier.prototype.maxOffsetBeforeNex = function (next, max) {
 
 module.exports = Identifier;
 
-},{}],9:[function(_dereq_,module,exports){
+},{}],10:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2152,7 +2615,7 @@ IdentifierInterval.prototype.toString = function () {
 
 module.exports = IdentifierInterval;
 
-},{}],10:[function(_dereq_,module,exports){
+},{}],11:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2200,7 +2663,7 @@ module.exports = {
     }
 };
 
-},{}],11:[function(_dereq_,module,exports){
+},{}],12:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2236,7 +2699,7 @@ module.exports = {
     "TextInsert"    : _dereq_('./textinsert')
 };
 
-},{"./identifier":8,"./identifierinterval":9,"./idfactory":10,"./infinitestring":12,"./iterator":13,"./iteratorhelperidentifier":14,"./logootsadd":15,"./logootsblock":16,"./logootsdel":17,"./logootsropes":18,"./responseintnode":19,"./ropesnodes":20,"./textdelete":21,"./textinsert":22}],12:[function(_dereq_,module,exports){
+},{"./identifier":9,"./identifierinterval":10,"./idfactory":11,"./infinitestring":13,"./iterator":14,"./iteratorhelperidentifier":15,"./logootsadd":16,"./logootsblock":17,"./logootsdel":18,"./logootsropes":19,"./responseintnode":20,"./ropesnodes":21,"./textdelete":22,"./textinsert":23}],13:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2273,7 +2736,7 @@ InfiniteString.prototype.next = function () {
 
 module.exports = InfiniteString;
 
-},{}],13:[function(_dereq_,module,exports){
+},{}],14:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2321,7 +2784,7 @@ Iterator.prototype.next = function () {
 
 module.exports = Iterator;
 
-},{}],14:[function(_dereq_,module,exports){
+},{}],15:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2409,7 +2872,7 @@ IteratorHelperIdentifier.prototype.computeResults = function() {
 
 module.exports = IteratorHelperIdentifier;
 
-},{}],15:[function(_dereq_,module,exports){
+},{}],16:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2450,7 +2913,7 @@ LogootSAdd.prototype.execute = function (doc) {
 
 module.exports = LogootSAdd;
 
-},{}],16:[function(_dereq_,module,exports){
+},{}],17:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2512,7 +2975,7 @@ LogootSBlock.prototype.toString = function() {
 
 module.exports = LogootSBlock;
 
-},{}],17:[function(_dereq_,module,exports){
+},{}],18:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2558,7 +3021,7 @@ LogootSDel.prototype.execute = function (doc) {
 
 module.exports = LogootSDel;
 
-},{}],18:[function(_dereq_,module,exports){
+},{}],19:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3333,7 +3796,7 @@ LogootSRopes.prototype.viewLength = function () {
 
 module.exports = LogootSRopes;
 
-},{"./identifier":8,"./identifierinterval":9,"./idfactory":10,"./infinitestring":12,"./iterator":13,"./iteratorhelperidentifier":14,"./logootsadd":15,"./logootsblock":16,"./logootsdel":17,"./responseintnode":19,"./ropesnodes":20,"./textdelete":21,"./textinsert":22,"mute-utils":23}],19:[function(_dereq_,module,exports){
+},{"./identifier":9,"./identifierinterval":10,"./idfactory":11,"./infinitestring":13,"./iterator":14,"./iteratorhelperidentifier":15,"./logootsadd":16,"./logootsblock":17,"./logootsdel":18,"./responseintnode":20,"./ropesnodes":21,"./textdelete":22,"./textinsert":23,"mute-utils":24}],20:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3360,7 +3823,7 @@ var ResponseIntNode = function (i, node, path) {
 
 module.exports = ResponseIntNode;
 
-},{}],20:[function(_dereq_,module,exports){
+},{}],21:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3620,7 +4083,7 @@ RopesNodes.prototype.copyFromJSON = function (node) {
 
 module.exports = RopesNodes;
 
-},{}],21:[function(_dereq_,module,exports){
+},{}],22:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3650,7 +4113,7 @@ TextDelete.prototype.applyTo = function (doc) {
 
 module.exports = TextDelete;
 
-},{}],22:[function(_dereq_,module,exports){
+},{}],23:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3680,7 +4143,7 @@ TextInsert.prototype.applyTo = function (doc) {
 
 module.exports = TextInsert;
 
-},{}],23:[function(_dereq_,module,exports){
+},{}],24:[function(_dereq_,module,exports){
 /*
  *	Copyright 2014 Matthieu Nicolas
  *

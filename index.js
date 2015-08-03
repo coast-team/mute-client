@@ -19,7 +19,8 @@ var Mute = {
 	Coordinator: require('./lib/coordinator'),
     SocketIOAdapter: require('./lib/socket-io-adapter'),
     AceEditorAdapter: require('./lib/ace-editor-adapter'),
-    InfosUsersModule: require('./lib/infos-users')
+    InfosUsersModule: require('./lib/infos-users'),
+    PeerIOAdapter: require('./lib/peer-io-adapter')
 };
 
 module.exports = Mute;
