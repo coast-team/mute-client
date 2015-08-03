@@ -458,14 +458,14 @@ var Coordinator = function (docID, serverDB) {
 
     this.bufferLogootSOp = [];      // Buffer contenant les LogootSOperations distantes actuellement non traitées
     this.bufferTextOp = [];         // Buffer contenant les TextOperations locales actuellement non converties en LogootSOperations
-    
+
     this.prevOp = false;    // Type de la dernière opération
     this.prevOpPos = -1;    // Position de la dernière opération
     this.posCursor = 0;     // Position 'actuelle' du curseur
     this.viewTopRow = 0;    // Numéro de la ligne actuellement au sommet de la vue
     this.busy = false;      // Flag indiquant si l'utilisateur a saisi qqch depuis 1 sec
     this.flag = false;      // Flag évitant d'appeler simultanément plusieurs fois la même fonction
-    
+
     this.network = null;
     this.editor = null;
     this.timerTextOp = null;
@@ -483,7 +483,7 @@ var Coordinator = function (docID, serverDB) {
             var action = data.operation.action;
             var index = data.operation.index;
             var text = data.operation.text;
-            
+
             coordinator.addBufferTextOp({ action: action, index: index, text: text });
             coordinator.updateLastModificationDate(new Date().valueOf());
         }
@@ -512,7 +512,6 @@ Coordinator.prototype.init = function () {
     .done(function (results) {
         var doc;
         if(results.length === 0) {
-            console.log("BLOB");
             // New doc, add it to the DB
             doc = {
                 docID: coordinator.docID,
@@ -531,7 +530,6 @@ Coordinator.prototype.init = function () {
             });
         }
         else {
-            console.log("BLOG");
             // Retrieve the data stored
             doc = results[0];
             coordinator.creationDate = doc.creationDate;
@@ -564,8 +562,8 @@ Coordinator.prototype.setEditor = function (editor) {
         }
     });
     this.editor.on('scroll', function (viewTopRow) {
-        if(coordinator.disposed === false) { 
-            coordinator.viewTopRow = viewTopRow; 
+        if(coordinator.disposed === false) {
+            coordinator.viewTopRow = viewTopRow;
         }
     });
 
@@ -617,7 +615,7 @@ Coordinator.prototype.setNetwork = function (network) {
 
 Coordinator.prototype.addBufferTextOp = function (data) {
     /**
-     *  Format attendu de data : 
+     *  Format attendu de data :
      *  data = {
      *      action: Le type d'action réalisée (insertText, removeText, insertLines, removeLines)
      *      index: La position à laquelle l'action a été réalisée dans le texte
@@ -782,7 +780,7 @@ Coordinator.prototype.cleanBufferLogootSOp = function () {
 
         this.emit('remoteOperations', { operations: operations });
         this.emit('update', { str: this.ropes.str, diffNbLines: diffNbLines, operations: tos });
-        
+
         //this.emit('awareness', { nbLogootSOp: this.bufferLogootSOp.length });
         if(this.editor !== null) {
             this.editor.on('change', function (data) {
@@ -855,7 +853,7 @@ Coordinator.prototype.giveCopy = function(data) {
     }else{
         this.emit('initDoc', args);
     }
-    
+
 
 };
 Coordinator.prototype.join = function (json) {
@@ -866,7 +864,7 @@ Coordinator.prototype.join = function (json) {
     var temp;
     var content;
 
-    json.docID = this.docID;    
+    json.docID = this.docID;
 
     this.replicaNumber = json.replicaNumber;
     coordinator.updateLastModificationDate(new Date(json.lastModificationDate).valueOf());
@@ -877,7 +875,6 @@ Coordinator.prototype.join = function (json) {
     }
 
     if(json.ropes !== null && json.ropes !== undefined) {
-        console.log("bobo");
         // Have to use a var temp in case of replicating the coordinator's ropes (offline-mode)
         temp = new LogootSRopes(this.replicaNumber);
         temp.copyFromJSON(json.ropes);
@@ -892,7 +889,7 @@ Coordinator.prototype.join = function (json) {
     if(this.readOnlyMode === false) {
         this.emit('initEditor', { str: this.ropes.str });
     }
-    
+
     this.emit('updateHistoryScrollerValue', { length: this.history.length });
 
     /**
@@ -901,7 +898,7 @@ Coordinator.prototype.join = function (json) {
     if(this.editor !== null) {
         this.editor.on('localOperation', this.localOperationHandler);
     }
-    
+
     if(this.intervalCleanBufferTextOp === null && this.intervalCleanBufferLogootSOp === null) {
         this.intervalCleanBufferTextOp = setInterval(function () {
             coordinator.cleanBufferTextOp();
@@ -933,7 +930,7 @@ Coordinator.prototype.updateState = function (str, currentState, newState) {
         if(newState <= this.history.length) {
             for(i=currentState; i<newState; i++) {
                 str = this.applyTextOperation(str, this.history[i], false);
-            }   
+            }
         }
     }
     else if(newState < currentState) {
@@ -1032,6 +1029,7 @@ Coordinator.prototype.dispose = function () {
 };
 
 module.exports = Coordinator;
+
 },{"events":7,"mute-structs":8,"mute-utils":24}],4:[function(_dereq_,module,exports){
 var events = _dereq_('events');
 
@@ -1452,9 +1450,9 @@ var Data = function(event, data){
 
 /*
 PeerInfo Object
-Inofmrations about remote peer
+Informations about remote peer
 connection : connection between the current and the remote peer
-relpicaNumber : replica number of the remote peer
+replicaNumber : replica number of the remote peer
  */
 
 var PeerInfo = function(connection){
@@ -1486,7 +1484,7 @@ var PeerIOAdapter = function(coordinator){
     this.first = false;
     this.replicaNumber = null; //replica number of the current peer
     this.username = null; //username of current peer
-    this.defaultInfoUsers = null; //defaultInfosUsers genrated at the connection initialization 
+    this.defaultInfoUsers = null; //defaultInfosUsers genrated at the connection initialization
 
     this.coordinator.on('initNetwork', function (data) {
         if(peerIOAdapter.disposed === false) {
@@ -1506,14 +1504,14 @@ var PeerIOAdapter = function(coordinator){
         }
     });
     this.coordinator.on('doc', function (args){
-        //Give a copy of the 
+        //Give a copy of the document
         console.log(args);
         msg = {
-            "ropes": args.ropes,
-            "history": args.history,
-            "bufferLogootSOp": args.bufferLogootSOp,
-            "creationDate": args.creationDate,
-            "lastModificationDate": args.lastModificationDate
+            ropes: args.ropes,
+            history: args.history,
+            bufferLogootSOp: args.bufferLogootSOp,
+            creationDate: args.creationDate,
+            lastModificationDate: args.lastModificationDate
         };
 
         var data = JSON.stringify(new Data('sendDoc', msg));
@@ -1529,11 +1527,11 @@ var PeerIOAdapter = function(coordinator){
 
     this.coordinator.on('initDoc', function (args){
         msg = {
-            "ropes": args.ropes,
-            "history": args.history,
-            "bufferLogootSOp": args.bufferLogootSOp,
-            "creationDate": args.creationDate,
-            "lastModificationDate": args.lastModificationDate
+            ropes: args.ropes,
+            history: args.history,
+            bufferLogootSOp: args.bufferLogootSOp,
+            creationDate: args.creationDate,
+            lastModificationDate: args.lastModificationDate
         };
         peerIOAdapter.emit('receiveDoc', msg);
     });
@@ -1576,9 +1574,13 @@ PeerIOAdapter.prototype.createSocket = function () {
     };
 
     this.socketServer = io.connect(location.origin, connOptions);
+    /*
+    You can use the signaling server set up on the mute server demo, to do that, you have just to uncomment the two following lines and comment the third
+    WARNING : some troubles were encountred with firefox browser
+    */
     //var peerServerId = Math.floor(Math.random()*100000).toString();
+    //this.peer = new Peer(peerServerId, {host: '/', port: 8080, path: '/peerjs'}); //signaling server on mute demo server
     this.peer = new Peer({key: 'lwjd5qra8257b9', debug : true}); // actually using a foreign signaling server
-    //this.peer = new Peer(peerServerId, {host: '/', port: 8080, path: '/peerjs'});
     this.peer.on('open', function(id){
         peerIOAdapter.peerId = id;
         var infoPeer = {
@@ -1589,24 +1591,24 @@ PeerIOAdapter.prototype.createSocket = function () {
     });
 
     function connect (connection){ //Initialize connection with remote peer
-        console.log("connection");
+        console.log('connection');
         if(!peerIOAdapter.peerAlreadyExists(connection)){
             console.log(connection);
 
             var peerInfo = new PeerInfo(connection);
             peerIOAdapter.peers.push(peerInfo);
-            
+
             connection.on('data', handleEvent); // data receiving
-            
+
             connection.on('close', function(){
                 //connection closing
-                var replicaNumber = peerIOAdapter.getReplicaNumber(connection.peer); 
+                var replicaNumber = peerIOAdapter.getReplicaNumber(connection.peer);
                 peerIOAdapter.emit('removeUser', replicaNumber);
                 this.close();
                 var index = peerIOAdapter.peers.indexOf(this);
                 peerIOAdapter.peers.splice(index, 1);
             });
-            
+
             if(!peerIOAdapter.joinDoc && !peerIOAdapter.first){
                 peerIOAdapter.joinDoc = true;
                 var msg = JSON.stringify(new Data('joinDoc', peerIOAdapter.peerId));
@@ -1623,102 +1625,74 @@ PeerIOAdapter.prototype.createSocket = function () {
     }
 
     function handleEvent(args){
-        //manage data receiving 
-        console.log("HandleEvent");
+        //manage data receiving
+        console.log('HandleEvent');
         console.log(args);
         try{
             var data = JSON.parse(args);
-            if(data.event !== null && data.event !== undefined){
+            if(data.event !== null && data.event !== undefined && peerIOAdapter.disposed === false){
                 switch(data.event){
                     case 'sendOps':
-                        if(peerIOAdapter.disposed === false) {
-                            data.data.replicaNumber = peerIOAdapter.replicaNumber;
-                            peerIOAdapter.emit('receiveOps', data.data);
-                        }
+                        data.data.replicaNumber = peerIOAdapter.replicaNumber;
+                        peerIOAdapter.emit('receiveOps', data.data);
                         break;
                     case 'sendDoc':
-                        if(peerIOAdapter.disposed === false) {
-                            if(peerIOAdapter.replicaNumber !== null){
-                                data.data.replicaNumber = peerIOAdapter.replicaNumber;
-                                data.data.infosUsers = peerIOAdapter.defaultInfoUsers;
+                            data.data.replicaNumber = peerIOAdapter.replicaNumber;
+                            data.data.infosUsers = peerIOAdapter.defaultInfoUsers;
                             console.log('receiveOps');
-                            }
                             peerIOAdapter.emit('receiveDoc', data.data);
                             peerIOAdapter.emit('receiveDocPeer', data.data);
-                        }
                         break;
                     case 'queryUserInfo' :
-                        if(peerIOAdapter.disposed === false) {
-                            var peerId = data.data.peerId;
-                            peerIOAdapter.emit('addUser', data.data.replicaNumber, data.data.username);
-                            peerIOAdapter.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
-                            data = {
-                                peerId : peerIOAdapter.peerId,
-                                replicaNumber : peerIOAdapter.replicaNumber,
-                                username : peerIOAdapter.username
-                            };
-                            var msg = JSON.stringify(new Data('addUser', data));
-                            var connection = peerIOAdapter.getPeer(peerId );
-                            if(connection !== null){
-                                connection.send(msg);
-                            }
+                        var peerId = data.data.peerId;
+                        peerIOAdapter.emit('addUser', data.data.replicaNumber, data.data.username);
+                        peerIOAdapter.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
+                        data = {
+                            peerId : peerIOAdapter.peerId,
+                            replicaNumber : peerIOAdapter.replicaNumber,
+                            username : peerIOAdapter.username
+                        };
+                        var msg = JSON.stringify(new Data('addUser', data));
+                        var connection = peerIOAdapter.getPeer(peerId );
+                        if(connection !== null){
+                            connection.send(msg);
                         }
                         break;
                     case 'addUser' :
-                        console.log("addUser");
-                        if(peerIOAdapter.disposed === false) {
-                            peerIOAdapter.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
-                            peerIOAdapter.emit('addUser', data.data.replicaNumber, data.data.username);
-                        }
+                        console.log('addUser');
+                        peerIOAdapter.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
+                        peerIOAdapter.emit('addUser', data.data.replicaNumber, data.data.username);
                         break;
                     case 'broadcastCollaboratorCursorAndSelections':
-                        if(peerIOAdapter.disposed === false) {
-                            peerIOAdapter.emit('changeCollaboratorCursorAndSelections', data.data);
-                        }
+                        peerIOAdapter.emit('changeCollaboratorCursorAndSelections', data.data);
                         break;
                     case 'broadcastCollaboratorUsername' :
-                        if(peerIOAdapter.disposed === false) {
-                            peerIOAdapter.emit('changeCollaboratorUsername', data.data);
-                        }
+                        peerIOAdapter.emit('changeCollaboratorUsername', data.data);
                         break;
                     case 'broadcastParole' :
-                        if(peerIOAdapter.disposed === false) {
-                            peerIOAdapter.emit('receiveParole', data.data);
-                        }
+                        peerIOAdapter.emit('receiveParole', data.data);
                         break;
                     case 'connect' :
-                        if(peerIOAdapter.disposed === false) {
-                            peerIOAdapter.emit('connect');
-                        }
-                        break;
-                    case 'disconnect' :
-                        //TODO
-                        if(peerIOAdapter.disposed === false) {
-                            peerIOAdapter.emit('connect');
-                        }
+                        peerIOAdapter.emit('connect');
                         break;
                     case 'userJoin' :
-                        if(peerIOAdapter.disposed === false) {
-                            peerIOAdapter.emit('receiveUserJoin', data.data);
-                        }
+                        peerIOAdapter.emit('receiveUserJoin', data.data);
                         break;
                     case 'userLeft' :
-                        if(peerIOAdapter.disposed === false) {
-                            peerIOAdapter.emit('receiveUserLeft', data.data);
-                        }
+                        peerIOAdapter.emit('receiveUserLeft', data.data);
                         break;
                     case 'joinDoc' :
                         peerIOAdapter.coordinator.giveCopy(data.data);
                         break;
                     default :
-                        console.log("handleEvent : ERROR !");
+                        console.log('handleEvent : ERROR !');
                         break;
                 }
             }
         }catch(e){
-            console.log("ERROR JSON PARSING");
+            console.log('ERROR JSON PARSING');
         }
-        
+
     }
 
     function addCollaborator(remoteId){
@@ -1726,7 +1700,7 @@ PeerIOAdapter.prototype.createSocket = function () {
         console.log("Add collaborator");
         console.log(connection);
         connection.on('open', function() {
-            console.log("OPEN");
+            console.log('OPEN');
             connect(connection);
         });
     }
@@ -1740,31 +1714,31 @@ PeerIOAdapter.prototype.createSocket = function () {
          */
         peerIOAdapter.emit('connect');
         console.log(infoPeerIds);
-        
+
         var peerIds = infoPeerIds.peers;
 
         peerIOAdapter.replicaNumber = infoPeerIds.replicaNumber;
         peerIOAdapter.username = "User " + peerIOAdapter.replicaNumber;
-        
+
         peerIOAdapter.defaultInfoUsers = {};
         peerIOAdapter.defaultInfoUsers[peerIOAdapter.replicaNumber] = {
                 cursorIndex: 0,
                 selections: [],
                 username: peerIOAdapter.username
             };
-        
+
         if(peerIds.length === 0){
             peerIOAdapter.first = true;
             peerIOAdapter.joinDoc = true;
             peerIOAdapter.coordinator.giveCopy(null);
-            
+
             var data = {};
             data.replicaNumber = peerIOAdapter.replicaNumber;
             data.infosUsers = peerIOAdapter.defaultInfoUsers;
             peerIOAdapter.emit('receiveDocPeer', data);
         }
         for(var i = 0; i < peerIds.length; i++){
-            console.log("Add Peer : " + peerIds[i]);
+            console.log('Add Peer : ' + peerIds[i]);
             var remoteId = peerIds[i];
             addCollaborator(remoteId);
         }
@@ -1808,7 +1782,7 @@ PeerIOAdapter.prototype.toOfflineMode = function () {
         this.socketServer.disconnect();
         this.emptyPeers();
     }
-    
+
 };
 
 PeerIOAdapter.prototype.emptyPeers = function() {
@@ -1882,6 +1856,7 @@ PeerIOAdapter.prototype.setReplicaNumber = function(peerID, replicaNumber) {
 };
 
 module.exports = PeerIOAdapter;
+
 },{"events":7}],6:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
@@ -1944,11 +1919,10 @@ SocketIOAdapter.prototype.setInfosUsersModule = function (infosUsersModule) {
     this.infosUsersModule = infosUsersModule;
 
     infosUsersModule.on('changeLocalCursorAndSelections', function (data) {
-        console.log("plop");
         console.log(data);
         if(socketIOAdapter.disposed === false) {
             if(socketIOAdapter.socket !== null && socketIOAdapter.socket !== undefined) {
-                socketIOAdapter.socket.emit('sendLocalInfosUser', data); 
+                socketIOAdapter.socket.emit('sendLocalInfosUser', data);
             }
         }
     });
@@ -1971,7 +1945,7 @@ SocketIOAdapter.prototype.createSocket = function () {
     this.socket = io.connect(location.origin, connOptions);
 
     this.socket.on('sendDoc', function (data) {
-        console.log("SEND DOC");
+        console.log('SEND DOC');
         console.log(data);
         if(socketIOAdapter.disposed === false) {
             socketIOAdapter.emit('receiveDoc', data);
@@ -1990,13 +1964,13 @@ SocketIOAdapter.prototype.createSocket = function () {
             socketIOAdapter.emit('changeCollaboratorCursorAndSelections', data);
         }
     });
-    
+
     this.socket.on('broadcastCollaboratorUsername', function (data) {
         if(socketIOAdapter.disposed === false) {
             socketIOAdapter.emit('changeCollaboratorUsername', data);
         }
     });
-    
+
     this.socket.on('broadcastParole', function (data) {
         if(socketIOAdapter.disposed === false) {
             socketIOAdapter.emit('receiveParole', data);
