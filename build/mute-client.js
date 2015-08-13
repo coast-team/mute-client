@@ -837,6 +837,7 @@ Coordinator.prototype.applyReverseTextOperation = function (str, to) {
     return str;
 };
 Coordinator.prototype.giveCopy = function(data) {
+    console.log('giveCopy');
     var args = {};
     args.callerID = data;
     args.bufferLogootSOp = this.bufferLogootSOp;
@@ -846,6 +847,7 @@ Coordinator.prototype.giveCopy = function(data) {
     args.creationDate = this.creationDate;
     args.history = this.history;
     if(data !== null){
+        console.log('data null');
         args.callerID = data;
         this.emit('doc', args);
     }else{
@@ -1159,6 +1161,7 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
         network.on('receiveInfoUser', joinDoc);
         network.on('receiveDocPeer', joinDoc);
         network.on('addUser', function(replicaNumber, username){
+            console.log('INFO USER');
             infosUsersModule.addUser(replicaNumber, username);
         });
 
@@ -1200,7 +1203,7 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
                 infosUsersModule.updateRemoteInfosUsers();
             }
         });
-        
+
         network.on('changeCollaboratorUsername', function (data) {
             var replicaNumber = data.replicaNumber;
             var username = data.username;
@@ -1321,7 +1324,7 @@ InfosUsersModule.prototype.applyRemoteOperations = function (operations) {
 
     for(i=0; i<operations.length; i++) {
         operation = operations[i];
-        
+
         if(operation.content !== undefined && operation.offset !== undefined && operation.content !== null && operation.offset !== null) {
             // Insertion
             diffCursor = operation.content.length;
@@ -1389,7 +1392,7 @@ InfosUsersModule.prototype.addUser = function (replicaNumber, username) {
 InfosUsersModule.prototype.removeUser = function (replicaNumber) {
     if(parseInt(this.replicaNumber) !== parseInt(replicaNumber)) {
         delete this.infosUsers[replicaNumber];
-    }   
+    }
 };
 
 InfosUsersModule.prototype.updateLocalUsername = function (username) {
@@ -1429,6 +1432,7 @@ InfosUsersModule.prototype.onCoordinatorDisposedHandler = function () {
 };
 
 module.exports = InfosUsersModule;
+
 },{"events":8}],5:[function(_dereq_,module,exports){
 var events = _dereq_('events');
 var SCAMP = _dereq_('./scamp-io-adapter');
@@ -1470,6 +1474,7 @@ var PeerIOAdapter = function(coordinator){
 
     this.coordinator = coordinator; // coordinator of the current peer
     this.peer = null; //peer object from peerJS API http://peerjs.com/
+    this.peers = [];
     this.peerId = null; //peerId of the current peer
     this.socketServer = null;
     this.connectionCreated = false;
@@ -1502,8 +1507,9 @@ var PeerIOAdapter = function(coordinator){
     });
     this.coordinator.on('doc', function (args){
         //Give a copy of the document
+        console.log('DOC !!!!!');
         console.log(args);
-        msg = {
+        var msg = {
             ropes: args.ropes,
             history: args.history,
             bufferLogootSOp: args.bufferLogootSOp,
@@ -1511,14 +1517,12 @@ var PeerIOAdapter = function(coordinator){
             lastModificationDate: args.lastModificationDate
         };
 
-        var data = JSON.stringify(new Data('sendDoc', msg));
-
-        var connection = peerIOAdapter.getPeer(args.callerID );
-        console.log(connection);
-        if(connection !== null){
-            connection.send(data);
-        }
-
+        var data = {
+            msg : msg,
+            peerId : args.callerID
+        };
+        console.log('YOLO !!!!');
+        peerIOAdapter.emit('giveDoc', data);
     });
 
 
@@ -1751,9 +1755,10 @@ PeerIOAdapter.prototype.createSocket = function () {
             * Add this peer to the model
             */
             console.log('BADA BOUM !!!');
-            if(! this.peerAlreadyExists(replicaNumber)){
-                peerIOAdapter.scampIOAdapter.peers.push(replicaNumber);
-                peerIOAdapter.emit('addUser', data.data.replicaNumber, data.data.username);
+            console.log(username);
+            console.log(replicaNumber);
+            if(! peerIOAdapter.peerAlreadyExists(replicaNumber)){
+                peerIOAdapter.emit('addUser', replicaNumber, username);
             }
         });
 
@@ -1766,6 +1771,24 @@ PeerIOAdapter.prototype.createSocket = function () {
             peerIOAdapter.socketServer.on('newNeighbor', function(peers){
                 peerIOAdapter.emit('newNeighbor', peers);
             })
+        });
+
+        peerIOAdapter.scampIOAdapter.on('joinDoc', function(data){
+            console.log('JOIN DOC peerIO');
+            peerIOAdapter.coordinator.giveCopy(data);
+        });
+
+        peerIOAdapter.scampIOAdapter.on('receiveDoc', function(data){
+            data.replicaNumber = peerIOAdapter.replicaNumber;
+            data.infosUsers = peerIOAdapter.defaultInfoUsers;
+            console.log('receiveOps');
+            peerIOAdapter.emit('receiveDoc', data);
+            peerIOAdapter.emit('receiveDocPeer', data);
+        });
+
+        peerIOAdapter.scampIOAdapter.on('receiveOp', function(data){
+            data.replicaNumber = peerIOAdapter.replicaNumber;
+            peerIOAdapter.emit('receiveOps', data.data);
         })
 
         peerIOAdapter.scampIOAdapter.init();
@@ -1798,8 +1821,8 @@ PeerIOAdapter.prototype.createSocket = function () {
 
 
 PeerIOAdapter.prototype.peerAlreadyExists = function(replicaNumber){
-    for(var i = 0; i < this.scampIOAdapter.peers.length; i++){
-        if(this.scampIOAdapter.peers[i] === replicaNumber){
+    for(var i = 0; i < this.peers.length; i++){
+        if(this.peers[i] === replicaNumber){
             return true;
         }
     }
@@ -1945,7 +1968,16 @@ var SCAMP = function(peerIOAdapter, offerRecipients){
     });
 
     this.peerIOAdapter.on('send', function(data){
-        self.broadcast(data);
+        console.log('send');
+        self.broadcastMsg(data);
+    });
+
+    this.peerIOAdapter.on('giveDoc', function(data){
+            console.log('giveDoc');
+            console.log(data);
+            var remoteConnection = self.getConnectionFromPeersList(data.peerId);
+            console.log(remoteConnection);
+            self.send(data.msg, 'giveDoc',remoteConnection);
     });
 
 };
@@ -2025,11 +2057,17 @@ SCAMP.prototype.initConnection = function(connection){
                     console.log('offer');
                     self.forwardOffer(msg);
                     break;
-                case 'broadcastMsg':
+                case 'broadcast':
+                    self.receiveOp(msg);
                     break;
                 case 'accept':
                     self.onOfferAccepted(msg);
                     break;
+                case 'giveDoc':
+                    self.receiveDoc(msg)
+                    console.log('TOTO !!!!');
+                    break;
+
                 case 'removeUser':
                     break;
                 case 'broadcastInfoUser':
@@ -2042,7 +2080,19 @@ SCAMP.prototype.initConnection = function(connection){
     }
 }
 
-SCAMP.prototype.getConnection = function(peerId){
+SCAMP.prototype.receiveOp = function(msg){
+    console.log('receiveOp');
+    console.log(msg);
+    this.emit('receiveOp', msg.data);
+    this.forwardBroadcast(msg);
+
+}
+
+SCAMP.prototype.receiveDoc = function(msg){
+    this.emit('receiveDoc', msg.data);
+};
+
+SCAMP.prototype.getConnectionFromPendingList = function(peerId){
     for(var i = 0; i < this.pendingList.length; i++){
         if(this.pendingList[i].peer === peerId){
             var res = this.pendingList[i];
@@ -2052,6 +2102,16 @@ SCAMP.prototype.getConnection = function(peerId){
     }
     return null;
 };
+
+SCAMP.prototype.getConnectionFromPeersList = function(peerId){
+    for(var i = 0; i < this.peers.length; i++){
+        if(this.peers[i].peerId === peerId){
+            return this.peers[i].connection;
+        }
+    }
+    return null;
+};
+
 
 SCAMP.prototype.isAlreadyInPartialView = function(replicaNumber){
     console.log('isAlreadyInPartialView');
@@ -2128,10 +2188,6 @@ SCAMP.prototype.makeOffer = function(index){
             this.clock ++;
         }
 
-        for (var i = 0; i < this.offerRecipients.length; i++) {
-            sendMsg(this.offerRecipients[i], msg);
-        }
-
         function sendMsg(remoteId, msg){
 
             var callback = function(msg){
@@ -2142,6 +2198,11 @@ SCAMP.prototype.makeOffer = function(index){
             args = new Array(msg);
             self.createConnection(remoteId, callback, args);
         }
+
+        for (var i = 0; i < this.offerRecipients.length; i++) {
+            sendMsg(this.offerRecipients[i], msg);
+        }
+
     }else{
         this.clock ++;
         this.peers[index].connection.send(msg);
@@ -2155,7 +2216,7 @@ SCAMP.prototype.onOfferAccepted = function(msg){
     console.log('on Offer accepted');
     console.log('wiiiii');
     console.log(msg);
-    var remoteConnection = this.getConnection(msg.srcPeerId);
+    var remoteConnection = this.getConnectionFromPendingList(msg.srcPeerId);
     console.log('toto');
     console.log(remoteConnection);
     if(msg.data !== null && msg.data !== undefined && remoteConnection !== null && remoteConnection !== undefined){
@@ -2183,26 +2244,23 @@ SCAMP.prototype.acceptOffer = function(msg){
         };
         console.log('Callback accept offer');
         console.log(data);
-        var remoteConnection = self.getConnection(msg.srcPeerId);
+        var remoteConnection = self.getConnectionFromPendingList(msg.srcPeerId);
         console.log('hey !!!');
         console.log(remoteConnection);
         remotePeerInfo.connection = remoteConnection;
         self.peers.push(remotePeerInfo);
         console.log('before send');
-        console.log(remoteConnection);
         self.send(data, 'accept', remoteConnection);
+        self.emit('joinDoc', msg.srcPeerId);
         console.log('Handshake !!!!!!!!');
     }
 
-    this.peerIOAdapter.emit('addUser',msg.data.peerInfo.replicaNumber, msg.data.username);
-
+    this.emit('addUser',msg.data.peerInfo.replicaNumber, msg.data.username);
     if(!this.isAlreadyInPendingList(msg.srcPeerId)){
         console.log('make remote connection');
-        console.log(data);
-        var args = new Array(this, remotePeerInfo, data);
+        var args = new Array(this);
         this.createConnection(msg.srcPeerId, callback, args);
         console.log('the connection');
-        console.log(remoteConnection);
     }else {
         callback(this);
     }
@@ -2220,11 +2278,16 @@ SCAMP.prototype.broadcastMsg = function(data){
 };
 
 SCAMP.prototype.send = function(data, context, connection, hop){
-    this.clock ++;
-    console.log(data);
-    var msg = JSON.stringify(new Message(this.peerIOAdapter.replicaNumber, this.clock, context, data, this.peerIOAdapter.peer.id, hop));
-    this.pushMsg(msg);
-    connection.send(msg);
+    if(connection !== null && connection !==undefined){
+        this.clock ++;
+        console.log(data);
+        var msg = JSON.stringify(new Message(this.peerIOAdapter.replicaNumber, this.clock, context, data, this.peerIOAdapter.peer.id, hop));
+        this.pushMsg(msg);
+        connection.send(msg);
+    }else{
+        console.log('Error send');
+    }
+
 };
 
 SCAMP.prototype.forwardOffer = function(msg){
@@ -2253,7 +2316,7 @@ SCAMP.prototype.forwardOffer = function(msg){
             console.log('send');
 
             //retirer de la pending list
-            this.getConnection(msg.srcPeerId); //remove from pendingList
+            this.getConnectionFromPendingList(msg.srcPeerId); //remove from pendingList
         }
     }
 };
@@ -2261,9 +2324,10 @@ SCAMP.prototype.forwardOffer = function(msg){
 SCAMP.prototype.forwardBroadcast = function(msg){
     this.emit('broadcast', msg);
     if(msg.hop > 0){
-        msg.decreaseHop();
+        msg.hop -= 1;
+        var newMsg = JSON.stringify(msg);
         for (var i = 0; i < this.peers.length; i++) {
-            this.peers[i].send(msg);
+            this.peers[i].connection.send(newMsg);
         }
     }
 };
