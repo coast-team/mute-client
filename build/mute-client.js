@@ -1915,7 +1915,7 @@ function makeTag(replicaNumber, clock){
 }
 
 function isEqualTag(tag1, tag2){
-    if(tag1 === tag2){
+    if(tag1 === tag2 && tag1 !== null && tag1 !== undefined && tag2 !== null && tag2 !== undefined){
         return true;
     }else{
         return false;
@@ -2051,6 +2051,7 @@ SCAMP.prototype.initConnection = function(connection){
             return;
         }
         if(msg.event !== null && msg.event !== undefined && !self.isKnownMsg(msg)){
+            console.log('passe le test');
             self.pushMsg(msg);
             switch(msg.event){
                 case 'offer':
@@ -2269,9 +2270,14 @@ SCAMP.prototype.acceptOffer = function(msg){
 };
 
 SCAMP.prototype.broadcastMsg = function(data){
+    console.log('Broadcast Msg');
     this.clock ++;
-    var msg = JSON.stringify(new Message(this.peerIOAdapter.replicaNumber, this.clock,'broadcast', data, this.peerIOAdapter.peer.id));
+    var msg = new Message(this.peerIOAdapter.replicaNumber, this.clock,'broadcast', data, this.peerIOAdapter.peer.id);
+    console.log(msg);
     this.pushMsg(msg);
+    console.log('onNetwork list :');
+    console.log(this.onNetworkMsg);
+    msg = JSON.stringify(msg);
     for(var i = 0; i < this.peers.length; i++){
         this.peers[i].connection.send(msg);
     }
@@ -2353,20 +2359,26 @@ SCAMP.prototype.refreshOfferRecipients = function() {
 SCAMP.prototype.isKnownMsg = function (msg) {
     console.log('is known message : ');
     if(msg.tag !== null && msg.tag !== undefined){
+        console.log('tag !== null');
         var tag = msg.tag;
+        console.log('tag : ', tag);
         for (var key in this.onNetworkMsg) {
+            console.log('key : ', key);
             if(isEqualTag(key, tag)){
                 console.log('true');
                 return true;
             }
         }
     }
-    console.log(false);
+    console.log('false');
     return false;
 };
 
 SCAMP.prototype.pushMsg = function (msg) {
-    this.onNetworkMsg[msg.tag] = msg;
+    console.log('push MSG');
+    if(msg.tag !== undefined && msg.tag !== null){
+        this.onNetworkMsg[msg.tag] = msg;
+    }
 };
 
 module.exports = SCAMP;
