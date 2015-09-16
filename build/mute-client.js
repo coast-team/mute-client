@@ -21,11 +21,13 @@ var Mute = {
     SocketIOAdapter: _dereq_('./lib/socket-io-adapter'),
     AceEditorAdapter: _dereq_('./lib/ace-editor-adapter'),
     InfosUsersModule: _dereq_('./lib/infos-users'),
-    PeerIOAdapter: _dereq_('./lib/peer-io-adapter')
+    PeerIOAdapter: _dereq_('./lib/peer-io-adapter'),
+	SCAMPIOAdapter: _dereq_('./lib/scamp-io-adapter')
 };
 
 module.exports = Mute;
-},{"./lib/ace-editor-adapter":2,"./lib/coordinator":3,"./lib/infos-users":4,"./lib/peer-io-adapter":5,"./lib/socket-io-adapter":6}],2:[function(_dereq_,module,exports){
+
+},{"./lib/ace-editor-adapter":2,"./lib/coordinator":3,"./lib/infos-users":4,"./lib/peer-io-adapter":5,"./lib/scamp-io-adapter":6,"./lib/socket-io-adapter":7}],2:[function(_dereq_,module,exports){
 /*
  *	Copyright 2014 Matthieu Nicolas
  *
@@ -402,7 +404,7 @@ AceEditorAdapter.prototype.onCoordinatorDisposedHandler = function (data) {
 };
 
 module.exports = AceEditorAdapter;
-},{"events":7}],3:[function(_dereq_,module,exports){
+},{"events":8}],3:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -477,8 +479,6 @@ var Coordinator = function (docID, serverDB) {
     this.updateLastModificationDateTimeout = null;
 
     this.localOperationHandler = function (data) {
-        console.log("local op !");
-        console.log(data);
         if(coordinator.disposed === false) {
             var action = data.operation.action;
             var index = data.operation.index;
@@ -837,6 +837,7 @@ Coordinator.prototype.applyReverseTextOperation = function (str, to) {
     return str;
 };
 Coordinator.prototype.giveCopy = function(data) {
+    console.log('giveCopy');
     var args = {};
     args.callerID = data;
     args.bufferLogootSOp = this.bufferLogootSOp;
@@ -845,9 +846,8 @@ Coordinator.prototype.giveCopy = function(data) {
     args.lastModificationDate = this.lastModificationDate;
     args.creationDate = this.creationDate;
     args.history = this.history;
-    console.log("give copy !!");
-    console.log(args);
     if(data !== null){
+        console.log('data null');
         args.callerID = data;
         this.emit('doc', args);
     }else{
@@ -857,8 +857,6 @@ Coordinator.prototype.giveCopy = function(data) {
 
 };
 Coordinator.prototype.join = function (json) {
-    console.log("JOIN");
-    console.log(json);
     var coordinator = this;
 
     var temp;
@@ -1030,7 +1028,7 @@ Coordinator.prototype.dispose = function () {
 
 module.exports = Coordinator;
 
-},{"events":7,"mute-structs":8,"mute-utils":24}],4:[function(_dereq_,module,exports){
+},{"events":8,"mute-structs":9,"mute-utils":25}],4:[function(_dereq_,module,exports){
 var events = _dereq_('events');
 
 var InfosUsersModule = function (docID, coordinator, editor, network, usernameManager, serverDB) {
@@ -1163,6 +1161,7 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
         network.on('receiveInfoUser', joinDoc);
         network.on('receiveDocPeer', joinDoc);
         network.on('addUser', function(replicaNumber, username){
+            console.log('INFO USER');
             infosUsersModule.addUser(replicaNumber, username);
         });
 
@@ -1204,7 +1203,7 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
                 infosUsersModule.updateRemoteInfosUsers();
             }
         });
-        
+
         network.on('changeCollaboratorUsername', function (data) {
             var replicaNumber = data.replicaNumber;
             var username = data.username;
@@ -1325,7 +1324,7 @@ InfosUsersModule.prototype.applyRemoteOperations = function (operations) {
 
     for(i=0; i<operations.length; i++) {
         operation = operations[i];
-        
+
         if(operation.content !== undefined && operation.offset !== undefined && operation.content !== null && operation.offset !== null) {
             // Insertion
             diffCursor = operation.content.length;
@@ -1383,7 +1382,6 @@ InfosUsersModule.prototype.updateRemoteInfosUsers = function () {
 };
 
 InfosUsersModule.prototype.addUser = function (replicaNumber, username) {
-    console.log("BIM BADA BOUM !!");
     this.infosUsers[replicaNumber] = {
         username: username,
         cursorIndex: 0,
@@ -1394,7 +1392,7 @@ InfosUsersModule.prototype.addUser = function (replicaNumber, username) {
 InfosUsersModule.prototype.removeUser = function (replicaNumber) {
     if(parseInt(this.replicaNumber) !== parseInt(replicaNumber)) {
         delete this.infosUsers[replicaNumber];
-    }   
+    }
 };
 
 InfosUsersModule.prototype.updateLocalUsername = function (username) {
@@ -1434,8 +1432,10 @@ InfosUsersModule.prototype.onCoordinatorDisposedHandler = function () {
 };
 
 module.exports = InfosUsersModule;
-},{"events":7}],5:[function(_dereq_,module,exports){
+
+},{"events":8}],5:[function(_dereq_,module,exports){
 var events = _dereq_('events');
+var SCAMP = _dereq_('./scamp-io-adapter');
 
 /*
 Data Object
@@ -1474,7 +1474,7 @@ var PeerIOAdapter = function(coordinator){
 
     this.coordinator = coordinator; // coordinator of the current peer
     this.peer = null; //peer object from peerJS API http://peerjs.com/
-    this.peers = []; //list of remote peers
+    this.peers = [];
     this.peerId = null; //peerId of the current peer
     this.socketServer = null;
     this.connectionCreated = false;
@@ -1485,6 +1485,8 @@ var PeerIOAdapter = function(coordinator){
     this.replicaNumber = null; //replica number of the current peer
     this.username = null; //username of current peer
     this.defaultInfoUsers = null; //defaultInfosUsers genrated at the connection initialization
+    this.scampIOAdapter = null;
+
 
     this.coordinator.on('initNetwork', function (data) {
         if(peerIOAdapter.disposed === false) {
@@ -1505,8 +1507,9 @@ var PeerIOAdapter = function(coordinator){
     });
     this.coordinator.on('doc', function (args){
         //Give a copy of the document
+        console.log('DOC !!!!!');
         console.log(args);
-        msg = {
+        var msg = {
             ropes: args.ropes,
             history: args.history,
             bufferLogootSOp: args.bufferLogootSOp,
@@ -1514,14 +1517,12 @@ var PeerIOAdapter = function(coordinator){
             lastModificationDate: args.lastModificationDate
         };
 
-        var data = JSON.stringify(new Data('sendDoc', msg));
-
-        var connection = peerIOAdapter.getPeer(args.callerID );
-        console.log(connection);
-        if(connection !== null){
-            connection.send(data);
-        }
-
+        var data = {
+            msg : msg,
+            peerId : args.callerID
+        };
+        console.log('YOLO !!!!');
+        peerIOAdapter.emit('giveDoc', data);
     });
 
 
@@ -1580,7 +1581,7 @@ PeerIOAdapter.prototype.createSocket = function () {
     */
     //var peerServerId = Math.floor(Math.random()*100000).toString();
     //this.peer = new Peer(peerServerId, {host: '/', port: 8080, path: '/peerjs'}); //signaling server on mute demo server
-    this.peer = new Peer({key: 'lwjd5qra8257b9', debug : true}); // actually using a foreign signaling server
+    this.peer = new Peer({key: 'lwjd5qra8257b9', debug : false}); // actually using a foreign signaling server
     this.peer.on('open', function(id){
         peerIOAdapter.peerId = id;
         var infoPeer = {
@@ -1590,39 +1591,39 @@ PeerIOAdapter.prototype.createSocket = function () {
         peerIOAdapter.socketServer.emit('newPeer', infoPeer);
     });
 
-    function connect (connection){ //Initialize connection with remote peer
-        console.log('connection');
-        if(!peerIOAdapter.peerAlreadyExists(connection)){
-            console.log(connection);
-
-            var peerInfo = new PeerInfo(connection);
-            peerIOAdapter.peers.push(peerInfo);
-
-            connection.on('data', handleEvent); // data receiving
-
-            connection.on('close', function(){
-                //connection closing
-                var replicaNumber = peerIOAdapter.getReplicaNumber(connection.peer);
-                peerIOAdapter.emit('removeUser', replicaNumber);
-                this.close();
-                var index = peerIOAdapter.peers.indexOf(this);
-                peerIOAdapter.peers.splice(index, 1);
-            });
-
-            if(!peerIOAdapter.joinDoc && !peerIOAdapter.first){
-                peerIOAdapter.joinDoc = true;
-                var msg = JSON.stringify(new Data('joinDoc', peerIOAdapter.peerId));
-                connection.send(msg);
-            }
-            var data = {
-                peerId : peerIOAdapter.peerId,
-                replicaNumber : peerIOAdapter.replicaNumber,
-                username : peerIOAdapter.username
-            };
-            var request = JSON.stringify(new Data('queryUserInfo', data));
-            connection.send(request);
-        }
-    }
+    // function connect (connection){ //Initialize connection with remote peer
+    //     console.log('connection');
+    //     if(!peerIOAdapter.peerAlreadyExists(connection)){
+    //         console.log(connection);
+    //
+    //         var peerInfo = new PeerInfo(connection);
+    //         peerIOAdapter.peers.push(peerInfo);
+    //
+    //         connection.on('data', handleEvent); // data receiving
+    //
+    //         connection.on('close', function(){
+    //             //connection closing
+    //             var replicaNumber = peerIOAdapter.getReplicaNumber(connection.peer);
+    //             peerIOAdapter.emit('removeUser', replicaNumber);
+    //             this.close();
+    //             var index = peerIOAdapter.peers.indexOf(this);
+    //             peerIOAdapter.peers.splice(index, 1);
+    //         });
+    //
+    //         if(!peerIOAdapter.joinDoc && !peerIOAdapter.first){
+    //             peerIOAdapter.joinDoc = true;
+    //             var msg = JSON.stringify(new Data('joinDoc', peerIOAdapter.peerId));
+    //             connection.send(msg);
+    //         }
+    //         var data = {
+    //             peerId : peerIOAdapter.peerId,
+    //             replicaNumber : peerIOAdapter.replicaNumber,
+    //             username : peerIOAdapter.username
+    //         };
+    //         var request = JSON.stringify(new Data('queryUserInfo', data));
+    //         connection.send(request);
+    //     }
+    // }
 
     function handleEvent(args){
         //manage data receiving
@@ -1695,15 +1696,15 @@ PeerIOAdapter.prototype.createSocket = function () {
 
     }
 
-    function addCollaborator(remoteId){
-        var connection = peerIOAdapter.peer.connect(remoteId);
-        console.log("Add collaborator");
-        console.log(connection);
-        connection.on('open', function() {
-            console.log('OPEN');
-            connect(connection);
-        });
-    }
+    // function addCollaborator(remoteId){
+    //     var connection = peerIOAdapter.peer.connect(remoteId);
+    //     console.log("Add collaborator");
+    //     console.log(connection);
+    //     connection.on('open', function() {
+    //         console.log('OPEN');
+    //         connect(connection);
+    //     });
+    // }
 
     this.socketServer.on('infoPeerIDs', function(infoPeerIds){
         /* Receiving informations from server
@@ -1737,14 +1738,69 @@ PeerIOAdapter.prototype.createSocket = function () {
             data.infosUsers = peerIOAdapter.defaultInfoUsers;
             peerIOAdapter.emit('receiveDocPeer', data);
         }
-        for(var i = 0; i < peerIds.length; i++){
-            console.log('Add Peer : ' + peerIds[i]);
-            var remoteId = peerIds[i];
-            addCollaborator(remoteId);
-        }
+
+        peerIOAdapter.scampIOAdapter = new SCAMP(peerIOAdapter, peerIds);
+
+        peerIOAdapter.scampIOAdapter.on('queryInfoUser', function(){
+            //TODO
+        });
+
+        peerIOAdapter.scampIOAdapter.on('removeUser', function(){
+            //TODO
+        });
+
+        peerIOAdapter.scampIOAdapter.on('addUser', function(replicaNumber, username){
+            /*
+            * Check whether the remote peer already exists
+            * Add this peer to the model
+            */
+            console.log('BADA BOUM !!!');
+            console.log(username);
+            console.log(replicaNumber);
+            if(! peerIOAdapter.peerAlreadyExists(replicaNumber)){
+                peerIOAdapter.emit('addUser', replicaNumber, username);
+            }
+        });
+
+        peerIOAdapter.scampIOAdapter.on('moreInfoUser', function(){
+            var infoPeer = {
+                docID : peerIOAdapter.coordinator.docID,
+                peerID :peerIOAdapter.peerId
+            };
+            peerIOAdapter.socketServer.emit('getNeighbor', infoPeer);
+            peerIOAdapter.socketServer.on('newNeighbor', function(peers){
+                peerIOAdapter.emit('newNeighbor', peers);
+            })
+        });
+
+        peerIOAdapter.scampIOAdapter.on('joinDoc', function(data){
+            console.log('JOIN DOC peerIO');
+            peerIOAdapter.coordinator.giveCopy(data);
+        });
+
+        peerIOAdapter.scampIOAdapter.on('receiveDoc', function(data){
+            data.replicaNumber = peerIOAdapter.replicaNumber;
+            data.infosUsers = peerIOAdapter.defaultInfoUsers;
+            console.log('receiveOps');
+            peerIOAdapter.emit('receiveDoc', data);
+            peerIOAdapter.emit('receiveDocPeer', data);
+        });
+
+        peerIOAdapter.scampIOAdapter.on('receiveOp', function(data){
+            data.replicaNumber = peerIOAdapter.replicaNumber;
+            peerIOAdapter.emit('receiveOps', data.data);
+        })
+
+        peerIOAdapter.scampIOAdapter.init();
+
+        // for(var i = 0; i < peerIds.length; i++){
+        //     console.log('Add Peer : ' + peerIds[i]);
+        //     var remoteId = peerIds[i];
+        //     addCollaborator(remoteId);
+        // }
     });
 
-    this.peer.on('connection', connect);
+    // this.peer.on('connection', connect);
 
     this.coordinator.on('operations', function (logootSOperations) {
         if(peerIOAdapter.disposed === false) {
@@ -1764,9 +1820,9 @@ PeerIOAdapter.prototype.createSocket = function () {
 };
 
 
-PeerIOAdapter.prototype.peerAlreadyExists = function(connection){
+PeerIOAdapter.prototype.peerAlreadyExists = function(replicaNumber){
     for(var i = 0; i < this.peers.length; i++){
-        if(this.peers[i].peer === connection.peer){
+        if(this.peers[i] === replicaNumber){
             return true;
         }
     }
@@ -1780,16 +1836,8 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
 PeerIOAdapter.prototype.toOfflineMode = function () {
     if(this.socketServer !== null && this.socketServer !== undefined) {
         this.socketServer.disconnect();
-        this.emptyPeers();
     }
 
-};
-
-PeerIOAdapter.prototype.emptyPeers = function() {
-    for(var i = 0; i < this.peers.length; i ++){
-        this.peers[i].connection.close();
-    }
-    this.peers = [];
 };
 
 PeerIOAdapter.prototype.send = function (logootSOperations) {
@@ -1799,10 +1847,7 @@ PeerIOAdapter.prototype.send = function (logootSOperations) {
         'lastModificationDate': new Date()
     };
     var data = new Data('sendOps', obj);
-    var newData = JSON.stringify(data);
-    for(var i = 0; i < this.peers.length; i++){
-        this.peers[i].connection.send(newData);
-    }
+    this.emit('send', data);
 };
 
 PeerIOAdapter.prototype.onCoordinatorDisposedHandler = function () {
@@ -1857,7 +1902,488 @@ PeerIOAdapter.prototype.setReplicaNumber = function(peerID, replicaNumber) {
 
 module.exports = PeerIOAdapter;
 
-},{"events":7}],6:[function(_dereq_,module,exports){
+},{"./scamp-io-adapter":6,"events":8}],6:[function(_dereq_,module,exports){
+var events = _dereq_('events');
+
+var HOP = 7;
+/*
+Useful functions
+ */
+
+function makeTag(replicaNumber, clock){
+    return replicaNumber + ':' + clock;
+}
+
+function isEqualTag(tag1, tag2){
+    if(tag1 === tag2 && tag1 !== null && tag1 !== undefined && tag2 !== null && tag2 !== undefined){
+        return true;
+    }else{
+        return false;
+    }
+}
+
+var PeerInfo = function(replicaNumber, connection){
+    this.replicaNumber = replicaNumber;
+    this.connection = connection || null;
+};
+
+var Message = function(replicaNumber, clock, context, data, srcPeerId, hop){
+    console.log('MESSAGE');
+    console.log(context);
+    this.hop = hop || HOP;
+    this.tag = makeTag(replicaNumber, clock);
+    this.event = context;
+    this.data = data;
+    this.srcPeerId = srcPeerId; //peerID of emitter
+};
+
+Message.prototype.decreaseHop = function () {
+    console.log('decreas hop');
+  if(this.hop > 0){
+    this.hop --;
+  }
+};
+
+var SCAMP = function(peerIOAdapter, offerRecipients){
+    var self = this;
+    this.safe = 0;
+    this.peers = []; //partial view
+    this.pendingList = []; //pendingList waiting for response
+    this.offerRecipients = offerRecipients;
+    this.peerIOAdapter = peerIOAdapter;
+    this.clock = 0;
+    this.firstConnection = true;
+    this.onNetworkMsg = {}; //All msg, send and received
+
+    this.peerIOAdapter.on('launch', function(data){
+        //TODO
+    });
+
+    this.peerIOAdapter.on('infoServer', function(data){
+        //TODO
+    });
+
+    this.peerIOAdapter.on('infoUser', function(data){
+        //TODO
+    });
+
+    this.peerIOAdapter.on('send', function(data){
+        console.log('send');
+        self.broadcastMsg(data);
+    });
+
+    this.peerIOAdapter.on('giveDoc', function(data){
+            console.log('giveDoc');
+            console.log(data);
+            var remoteConnection = self.getConnectionFromPeersList(data.peerId);
+            console.log(remoteConnection);
+            self.send(data.msg, 'giveDoc',remoteConnection);
+    });
+
+};
+
+SCAMP.prototype.__proto__ = events.EventEmitter.prototype;
+
+SCAMP.prototype.init = function(){
+    var self = this;
+
+    if(this.firstConnection){
+        this.firstConnection = false;
+        this.makeOffer();
+    }
+
+    this.peerIOAdapter.peer.on('connection', function(connection){
+        console.log('New connection :-)');
+        self.initConnection(connection);
+    });
+
+};
+
+//Get remonte connection already saved in pending list
+//And remove it from pendingList
+
+SCAMP.prototype.createConnection = function(peerId, callback, args){
+    console.log('New connection');
+    var self = this;
+
+    var connection = this.peerIOAdapter.peer.connect(peerId);
+    console.log(connection);
+    connection.on('open', function(){
+        console.log('connection is opened');
+        self.initConnection(connection);
+        if(callback !== null && callback !== undefined){
+            callback.apply(this, args);
+        }
+    });
+};
+
+SCAMP.prototype.initConnection = function(connection){
+    console.log('initConnection');
+    console.log(this);
+    var self = this;
+    if(!self.isAlreadyInPeersList(connection.peer) && !self.isAlreadyInPendingList(connection.peer)){
+        console.log('OK !!');
+        this.pendingList.push(connection);
+        connection.on('data', handleMsg); // data receiving
+        connection.on('close', function(){
+            console.log('close connection');
+            //connection closing
+            var replicaNumber = self.getReplicaNumber(connection.peer);
+            //self.peerIOAdapter.emit('removeUser', replicaNumber);
+            console.log(replicaNumber);
+            self.refreshOfferRecipients();
+            this.close();
+            var index = self.peers.indexOf(this);
+            self.peers.splice(index, 1);
+        });
+    }
+
+
+    function handleMsg(arg){
+        console.log('handle msg');
+        console.log(arg);
+        try{
+            var msg = JSON.parse(arg);
+            console.log(msg.event);
+        }catch(e){
+            console.log("Not a valid JSON");
+            console.log(msg);
+            return;
+        }
+        if(msg.event !== null && msg.event !== undefined && !self.isKnownMsg(msg)){
+            console.log('passe le test');
+            self.pushMsg(msg);
+            switch(msg.event){
+                case 'offer':
+                    console.log('offer');
+                    self.forwardOffer(msg);
+                    break;
+                case 'broadcast':
+                    self.receiveOp(msg);
+                    break;
+                case 'accept':
+                    self.onOfferAccepted(msg);
+                    break;
+                case 'giveDoc':
+                    self.receiveDoc(msg)
+                    console.log('TOTO !!!!');
+                    break;
+
+                case 'removeUser':
+                    break;
+                case 'broadcastInfoUser':
+                    break;
+                default :
+                    console.log("ERREUR SCAMP received undefined context");
+                    break;
+            }
+        }
+    }
+}
+
+SCAMP.prototype.receiveOp = function(msg){
+    console.log('receiveOp');
+    console.log(msg);
+    this.emit('receiveOp', msg.data);
+    this.forwardBroadcast(msg);
+
+}
+
+SCAMP.prototype.receiveDoc = function(msg){
+    this.emit('receiveDoc', msg.data);
+};
+
+SCAMP.prototype.getConnectionFromPendingList = function(peerId){
+    for(var i = 0; i < this.pendingList.length; i++){
+        if(this.pendingList[i].peer === peerId){
+            var res = this.pendingList[i];
+            this.pendingList.splice(i,1);
+            return res;
+        }
+    }
+    return null;
+};
+
+SCAMP.prototype.getConnectionFromPeersList = function(peerId){
+    for(var i = 0; i < this.peers.length; i++){
+        if(this.peers[i].peerId === peerId){
+            return this.peers[i].connection;
+        }
+    }
+    return null;
+};
+
+
+SCAMP.prototype.isAlreadyInPartialView = function(replicaNumber){
+    console.log('isAlreadyInPartialView');
+    console.log(this.peers);
+    for (var i = 0; i < this.peers.length; i++) {
+        if(this.peers[i].peerInfo.replicaNumber === replicaNumber){
+            console.log('true');
+            return true;
+        }
+    }
+    console.log('false');
+    return false;
+};
+
+SCAMP.prototype.isAlreadyInPendingList = function (peerId) {
+    console.log('isAlreadyInPendingList');
+    for (var i = 0; i < this.pendingList.length; i++) {
+        if(this.pendingList[i].peer == peerId){
+            console.log('true');
+            return true;
+        }
+    }
+    console.log('false');
+    return false;
+};
+
+SCAMP.prototype.isAlreadyInPeersList = function (peerId) {
+    console.log('isAlreadyInPeersList');
+    for (var i = 0; i < this.peers.length; i++) {
+        if(this.peers[i].peerId == peerId){
+            console.log('true');
+            return true;
+        }
+    }
+    console.log('false');
+    return false;
+};
+
+/*
+for a given peerId, returns the replica number of the right peer
+*/
+
+SCAMP.prototype.getReplicaNumber = function(peerId){
+    console.log('get replicanumber');
+    for (var i = 0; i < this.peers.length; i++) {
+        if(this.peers[i].connection.peer === peerId){
+            console.log('find');
+            console.log(this.peers[i]);
+            return this.peers[i].replicaNumber;
+        }
+    }
+    return null;
+};
+
+
+SCAMP.prototype.makeOffer = function(index){
+    console.log('MAKE OFFER');
+    //Création d'un peerInfo avec le replicanumber et tout...
+    var self = this;
+
+    var peerInfo = new PeerInfo(this.peerIOAdapter.replicaNumber);
+    //InfoUser + peerInfo
+    var data = {
+        peerId : this.peerIOAdapter.peer.id,
+        username : this.peerIOAdapter.username,
+        peerInfo : peerInfo
+    };
+
+    var msg = JSON.stringify(new Message(this.peerIOAdapter.replicaNumber, this.clock, "offer", data, this.peerIOAdapter.peer.id));
+    // var msg = new Message(this.peerIOAdapter.replicaNumber, this.clock, 'offer', null, this.peerIOAdapter.peer.id);
+
+    if(index === null || index === undefined){
+        if(this.offerRecipients.length > 0){
+            this.clock ++;
+        }
+
+        function sendMsg(remoteId, msg){
+
+            var callback = function(msg){
+                console.log('SEND');
+                console.log(msg);
+                this.send(msg);
+            }
+            args = new Array(msg);
+            self.createConnection(remoteId, callback, args);
+        }
+
+        for (var i = 0; i < this.offerRecipients.length; i++) {
+            sendMsg(this.offerRecipients[i], msg);
+        }
+
+    }else{
+        this.clock ++;
+        this.peers[index].connection.send(msg);
+
+    }
+
+
+};
+
+SCAMP.prototype.onOfferAccepted = function(msg){
+    console.log('on Offer accepted');
+    console.log('wiiiii');
+    console.log(msg);
+    var remoteConnection = this.getConnectionFromPendingList(msg.srcPeerId);
+    console.log('toto');
+    console.log(remoteConnection);
+    if(msg.data !== null && msg.data !== undefined && remoteConnection !== null && remoteConnection !== undefined){
+        console.log('Add User');
+        this.peerIOAdapter.emit('addUser', msg.data.peerInfo.replicaNumber, msg.data.username);
+        var remotePeerInfo = msg.data;
+        remotePeerInfo.connection = remoteConnection;
+        this.peers.push(remotePeerInfo);
+    }
+};
+
+SCAMP.prototype.acceptOffer = function(msg){
+    console.log('accept offer');
+    console.log(msg);
+
+
+
+    var callback = function(self){
+        var remotePeerInfo = msg.data;
+        var peerInfo = new PeerInfo(self.peerIOAdapter.replicaNumber); //PeerInfo of current node
+        var data = {
+            peerId : self.peerIOAdapter.peer.id,
+            username : self.peerIOAdapter.username,
+            peerInfo : peerInfo
+        };
+        console.log('Callback accept offer');
+        console.log(data);
+        var remoteConnection = self.getConnectionFromPendingList(msg.srcPeerId);
+        console.log('hey !!!');
+        console.log(remoteConnection);
+        remotePeerInfo.connection = remoteConnection;
+        self.peers.push(remotePeerInfo);
+        console.log('before send');
+        self.send(data, 'accept', remoteConnection);
+        self.emit('joinDoc', msg.srcPeerId);
+        console.log('Handshake !!!!!!!!');
+    }
+
+    this.emit('addUser',msg.data.peerInfo.replicaNumber, msg.data.username);
+    if(!this.isAlreadyInPendingList(msg.srcPeerId)){
+        console.log('make remote connection');
+        var args = new Array(this);
+        this.createConnection(msg.srcPeerId, callback, args);
+        console.log('the connection');
+    }else {
+        callback(this);
+    }
+
+
+};
+
+SCAMP.prototype.broadcastMsg = function(data){
+    console.log('Broadcast Msg');
+    this.clock ++;
+    var msg = new Message(this.peerIOAdapter.replicaNumber, this.clock,'broadcast', data, this.peerIOAdapter.peer.id);
+    console.log(msg);
+    this.pushMsg(msg);
+    console.log('onNetwork list :');
+    console.log(this.onNetworkMsg);
+    msg = JSON.stringify(msg);
+    for(var i = 0; i < this.peers.length; i++){
+        this.peers[i].connection.send(msg);
+    }
+};
+
+SCAMP.prototype.send = function(data, context, connection, hop){
+    if(connection !== null && connection !==undefined){
+        this.clock ++;
+        console.log(data);
+        var msg = JSON.stringify(new Message(this.peerIOAdapter.replicaNumber, this.clock, context, data, this.peerIOAdapter.peer.id, hop));
+        this.pushMsg(msg);
+        connection.send(msg);
+    }else{
+        console.log('Error send');
+    }
+
+};
+
+SCAMP.prototype.forwardOffer = function(msg){
+    console.log('forward offer');
+    var p = 1 / (1 + this.peers.length);
+    console.log('proba');
+    console.log(p);
+    console.log( ! this.isAlreadyInPartialView(msg.data.replicaNumber));
+    if(this.peerIOAdapter.peer.id !== msg.srcPeerId){
+        if((Math.random() <= p )&& ! this.isAlreadyInPartialView(msg.data.replicaNumber)){
+                console.log('Accept the offer');
+            if(msg.data !== null && msg.data !== undefined){
+                this.acceptOffer(msg);
+            }
+        }else{
+            console.log('forward the offer');
+
+            var index = Math.floor(Math.random() * this.peers.length);
+            console.log(index);
+            console.log(this.peers[index]);
+            //this.peers[index].connection.send(JSON.stringify(msg));
+            this.clock ++;
+            var newMsg = JSON.stringify(new Message(this.peerIOAdapter.replicaNumber, this.clock, 'offer', msg.data, msg.srcPeerId));
+            this.pushMsg(msg);
+            this.peers[index].connection.send(newMsg);
+            console.log('send');
+
+            //retirer de la pending list
+            this.getConnectionFromPendingList(msg.srcPeerId); //remove from pendingList
+        }
+    }
+};
+
+SCAMP.prototype.forwardBroadcast = function(msg){
+    this.emit('broadcast', msg);
+    if(msg.hop > 0){
+        msg.hop -= 1;
+        var newMsg = JSON.stringify(msg);
+        for (var i = 0; i < this.peers.length; i++) {
+            this.peers[i].connection.send(newMsg);
+        }
+    }
+};
+
+SCAMP.prototype.broadcastInfoUser = function() {
+    // TODO
+};
+
+SCAMP.prototype.refreshOfferRecipients = function() {
+    if(this.peers.length > 0){
+        this.offerRecipients = [];
+        var index = Math.floor(Math.random()*this.peers.length);
+        this.makeOffer(index);
+    }else{
+        this.emit('moreInfoUser');
+        this.peerIOAdapter.on('newNeighbor', function(peers){
+            this.offerRecipients = peers;
+            this.makeOffer();
+        })
+    }
+};
+
+SCAMP.prototype.isKnownMsg = function (msg) {
+    console.log('is known message : ');
+    if(msg.tag !== null && msg.tag !== undefined){
+        console.log('tag !== null');
+        var tag = msg.tag;
+        console.log('tag : ', tag);
+        for (var key in this.onNetworkMsg) {
+            console.log('key : ', key);
+            if(isEqualTag(key, tag)){
+                console.log('true');
+                return true;
+            }
+        }
+    }
+    console.log('false');
+    return false;
+};
+
+SCAMP.prototype.pushMsg = function (msg) {
+    console.log('push MSG');
+    if(msg.tag !== undefined && msg.tag !== null){
+        this.onNetworkMsg[msg.tag] = msg;
+    }
+};
+
+module.exports = SCAMP;
+
+},{"events":8}],7:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2074,7 +2600,7 @@ SocketIOAdapter.prototype.onCoordinatorDisposedHandler = function () {
 
 module.exports = SocketIOAdapter;
 
-},{"events":7}],7:[function(_dereq_,module,exports){
+},{"events":8}],8:[function(_dereq_,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -2377,7 +2903,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],8:[function(_dereq_,module,exports){
+},{}],9:[function(_dereq_,module,exports){
 /*
  *	Copyright 2014 Matthieu Nicolas
  *
@@ -2396,7 +2922,7 @@ function isUndefined(arg) {
  */
 module.exports = _dereq_('./lib/index');
 
-},{"./lib/index":12}],9:[function(_dereq_,module,exports){
+},{"./lib/index":13}],10:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2542,7 +3068,7 @@ Identifier.prototype.maxOffsetBeforeNex = function (next, max) {
 
 module.exports = Identifier;
 
-},{}],10:[function(_dereq_,module,exports){
+},{}],11:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2615,7 +3141,7 @@ IdentifierInterval.prototype.toString = function () {
 
 module.exports = IdentifierInterval;
 
-},{}],11:[function(_dereq_,module,exports){
+},{}],12:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2663,7 +3189,7 @@ module.exports = {
     }
 };
 
-},{}],12:[function(_dereq_,module,exports){
+},{}],13:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2699,7 +3225,7 @@ module.exports = {
     "TextInsert"    : _dereq_('./textinsert')
 };
 
-},{"./identifier":9,"./identifierinterval":10,"./idfactory":11,"./infinitestring":13,"./iterator":14,"./iteratorhelperidentifier":15,"./logootsadd":16,"./logootsblock":17,"./logootsdel":18,"./logootsropes":19,"./responseintnode":20,"./ropesnodes":21,"./textdelete":22,"./textinsert":23}],13:[function(_dereq_,module,exports){
+},{"./identifier":10,"./identifierinterval":11,"./idfactory":12,"./infinitestring":14,"./iterator":15,"./iteratorhelperidentifier":16,"./logootsadd":17,"./logootsblock":18,"./logootsdel":19,"./logootsropes":20,"./responseintnode":21,"./ropesnodes":22,"./textdelete":23,"./textinsert":24}],14:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2736,7 +3262,7 @@ InfiniteString.prototype.next = function () {
 
 module.exports = InfiniteString;
 
-},{}],14:[function(_dereq_,module,exports){
+},{}],15:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2784,7 +3310,7 @@ Iterator.prototype.next = function () {
 
 module.exports = Iterator;
 
-},{}],15:[function(_dereq_,module,exports){
+},{}],16:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2872,7 +3398,7 @@ IteratorHelperIdentifier.prototype.computeResults = function() {
 
 module.exports = IteratorHelperIdentifier;
 
-},{}],16:[function(_dereq_,module,exports){
+},{}],17:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2913,7 +3439,7 @@ LogootSAdd.prototype.execute = function (doc) {
 
 module.exports = LogootSAdd;
 
-},{}],17:[function(_dereq_,module,exports){
+},{}],18:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2975,7 +3501,7 @@ LogootSBlock.prototype.toString = function() {
 
 module.exports = LogootSBlock;
 
-},{}],18:[function(_dereq_,module,exports){
+},{}],19:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3021,7 +3547,7 @@ LogootSDel.prototype.execute = function (doc) {
 
 module.exports = LogootSDel;
 
-},{}],19:[function(_dereq_,module,exports){
+},{}],20:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3796,7 +4322,7 @@ LogootSRopes.prototype.viewLength = function () {
 
 module.exports = LogootSRopes;
 
-},{"./identifier":9,"./identifierinterval":10,"./idfactory":11,"./infinitestring":13,"./iterator":14,"./iteratorhelperidentifier":15,"./logootsadd":16,"./logootsblock":17,"./logootsdel":18,"./responseintnode":20,"./ropesnodes":21,"./textdelete":22,"./textinsert":23,"mute-utils":24}],20:[function(_dereq_,module,exports){
+},{"./identifier":10,"./identifierinterval":11,"./idfactory":12,"./infinitestring":14,"./iterator":15,"./iteratorhelperidentifier":16,"./logootsadd":17,"./logootsblock":18,"./logootsdel":19,"./responseintnode":21,"./ropesnodes":22,"./textdelete":23,"./textinsert":24,"mute-utils":25}],21:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3823,7 +4349,7 @@ var ResponseIntNode = function (i, node, path) {
 
 module.exports = ResponseIntNode;
 
-},{}],21:[function(_dereq_,module,exports){
+},{}],22:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -4083,7 +4609,7 @@ RopesNodes.prototype.copyFromJSON = function (node) {
 
 module.exports = RopesNodes;
 
-},{}],22:[function(_dereq_,module,exports){
+},{}],23:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -4113,7 +4639,7 @@ TextDelete.prototype.applyTo = function (doc) {
 
 module.exports = TextDelete;
 
-},{}],23:[function(_dereq_,module,exports){
+},{}],24:[function(_dereq_,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -4143,7 +4669,7 @@ TextInsert.prototype.applyTo = function (doc) {
 
 module.exports = TextInsert;
 
-},{}],24:[function(_dereq_,module,exports){
+},{}],25:[function(_dereq_,module,exports){
 /*
  *	Copyright 2014 Matthieu Nicolas
  *

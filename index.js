@@ -20,7 +20,8 @@ var Mute = {
     SocketIOAdapter: require('./lib/socket-io-adapter'),
     AceEditorAdapter: require('./lib/ace-editor-adapter'),
     InfosUsersModule: require('./lib/infos-users'),
-    PeerIOAdapter: require('./lib/peer-io-adapter')
+    PeerIOAdapter: require('./lib/peer-io-adapter'),
+	SCAMPIOAdapter: require('./lib/scamp-io-adapter')
 };
 
 module.exports = Mute;
