@@ -1,31 +1,304 @@
-!function(e){if("object"==typeof exports&&"undefined"!=typeof module)module.exports=e();else if("function"==typeof define&&define.amd)define([],e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.Mute=e()}}(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_dereq_,module,exports){
-/*
- *	Copyright 2014 Matthieu Nicolas
- *
- *	This program is free software: you can redistribute it and/or modify
- *	it under the terms of the GNU General Public License as published by
- *	the Free Software Foundation, either version 3 of the License, or
- * 	(at your option) any later version.
- *
- *	This program is distributed in the hope that it will be useful,
- *	but WITHOUT ANY WARRANTY; without even the implied warranty of
- *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *	GNU General Public License for more details.
- *
- *	You should have received a copy of the GNU General Public License
- *	along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-var Mute = {
-	Coordinator: _dereq_('./lib/coordinator'),
-    SocketIOAdapter: _dereq_('./lib/socket-io-adapter'),
-    AceEditorAdapter: _dereq_('./lib/ace-editor-adapter'),
-    InfosUsersModule: _dereq_('./lib/infos-users'),
-    PeerIOAdapter: _dereq_('./lib/peer-io-adapter')
+function EventEmitter() {
+  this._events = this._events || {};
+  this._maxListeners = this._maxListeners || undefined;
+}
+module.exports = EventEmitter;
+
+// Backwards-compat with node 0.10.x
+EventEmitter.EventEmitter = EventEmitter;
+
+EventEmitter.prototype._events = undefined;
+EventEmitter.prototype._maxListeners = undefined;
+
+// By default EventEmitters will print a warning if more than 10 listeners are
+// added to it. This is a useful default which helps finding memory leaks.
+EventEmitter.defaultMaxListeners = 10;
+
+// Obviously not all Emitters should be limited to 10. This function allows
+// that to be increased. Set to zero for unlimited.
+EventEmitter.prototype.setMaxListeners = function(n) {
+  if (!isNumber(n) || n < 0 || isNaN(n))
+    throw TypeError('n must be a positive number');
+  this._maxListeners = n;
+  return this;
 };
 
-module.exports = Mute;
-},{"./lib/ace-editor-adapter":2,"./lib/coordinator":3,"./lib/infos-users":4,"./lib/peer-io-adapter":5,"./lib/socket-io-adapter":6}],2:[function(_dereq_,module,exports){
+EventEmitter.prototype.emit = function(type) {
+  var er, handler, len, args, i, listeners;
+
+  if (!this._events)
+    this._events = {};
+
+  // If there is no 'error' event listener then throw.
+  if (type === 'error') {
+    if (!this._events.error ||
+        (isObject(this._events.error) && !this._events.error.length)) {
+      er = arguments[1];
+      if (er instanceof Error) {
+        throw er; // Unhandled 'error' event
+      }
+      throw TypeError('Uncaught, unspecified "error" event.');
+    }
+  }
+
+  handler = this._events[type];
+
+  if (isUndefined(handler))
+    return false;
+
+  if (isFunction(handler)) {
+    switch (arguments.length) {
+      // fast cases
+      case 1:
+        handler.call(this);
+        break;
+      case 2:
+        handler.call(this, arguments[1]);
+        break;
+      case 3:
+        handler.call(this, arguments[1], arguments[2]);
+        break;
+      // slower
+      default:
+        args = Array.prototype.slice.call(arguments, 1);
+        handler.apply(this, args);
+    }
+  } else if (isObject(handler)) {
+    args = Array.prototype.slice.call(arguments, 1);
+    listeners = handler.slice();
+    len = listeners.length;
+    for (i = 0; i < len; i++)
+      listeners[i].apply(this, args);
+  }
+
+  return true;
+};
+
+EventEmitter.prototype.addListener = function(type, listener) {
+  var m;
+
+  if (!isFunction(listener))
+    throw TypeError('listener must be a function');
+
+  if (!this._events)
+    this._events = {};
+
+  // To avoid recursion in the case that type === "newListener"! Before
+  // adding it to the listeners, first emit "newListener".
+  if (this._events.newListener)
+    this.emit('newListener', type,
+              isFunction(listener.listener) ?
+              listener.listener : listener);
+
+  if (!this._events[type])
+    // Optimize the case of one listener. Don't need the extra array object.
+    this._events[type] = listener;
+  else if (isObject(this._events[type]))
+    // If we've already got an array, just append.
+    this._events[type].push(listener);
+  else
+    // Adding the second element, need to change to array.
+    this._events[type] = [this._events[type], listener];
+
+  // Check for listener leak
+  if (isObject(this._events[type]) && !this._events[type].warned) {
+    if (!isUndefined(this._maxListeners)) {
+      m = this._maxListeners;
+    } else {
+      m = EventEmitter.defaultMaxListeners;
+    }
+
+    if (m && m > 0 && this._events[type].length > m) {
+      this._events[type].warned = true;
+      console.error('(node) warning: possible EventEmitter memory ' +
+                    'leak detected. %d listeners added. ' +
+                    'Use emitter.setMaxListeners() to increase limit.',
+                    this._events[type].length);
+      if (typeof console.trace === 'function') {
+        // not supported in IE 10
+        console.trace();
+      }
+    }
+  }
+
+  return this;
+};
+
+EventEmitter.prototype.on = EventEmitter.prototype.addListener;
+
+EventEmitter.prototype.once = function(type, listener) {
+  if (!isFunction(listener))
+    throw TypeError('listener must be a function');
+
+  var fired = false;
+
+  function g() {
+    this.removeListener(type, g);
+
+    if (!fired) {
+      fired = true;
+      listener.apply(this, arguments);
+    }
+  }
+
+  g.listener = listener;
+  this.on(type, g);
+
+  return this;
+};
+
+// emits a 'removeListener' event iff the listener was removed
+EventEmitter.prototype.removeListener = function(type, listener) {
+  var list, position, length, i;
+
+  if (!isFunction(listener))
+    throw TypeError('listener must be a function');
+
+  if (!this._events || !this._events[type])
+    return this;
+
+  list = this._events[type];
+  length = list.length;
+  position = -1;
+
+  if (list === listener ||
+      (isFunction(list.listener) && list.listener === listener)) {
+    delete this._events[type];
+    if (this._events.removeListener)
+      this.emit('removeListener', type, listener);
+
+  } else if (isObject(list)) {
+    for (i = length; i-- > 0;) {
+      if (list[i] === listener ||
+          (list[i].listener && list[i].listener === listener)) {
+        position = i;
+        break;
+      }
+    }
+
+    if (position < 0)
+      return this;
+
+    if (list.length === 1) {
+      list.length = 0;
+      delete this._events[type];
+    } else {
+      list.splice(position, 1);
+    }
+
+    if (this._events.removeListener)
+      this.emit('removeListener', type, listener);
+  }
+
+  return this;
+};
+
+EventEmitter.prototype.removeAllListeners = function(type) {
+  var key, listeners;
+
+  if (!this._events)
+    return this;
+
+  // not listening for removeListener, no need to emit
+  if (!this._events.removeListener) {
+    if (arguments.length === 0)
+      this._events = {};
+    else if (this._events[type])
+      delete this._events[type];
+    return this;
+  }
+
+  // emit removeListener for all listeners on all events
+  if (arguments.length === 0) {
+    for (key in this._events) {
+      if (key === 'removeListener') continue;
+      this.removeAllListeners(key);
+    }
+    this.removeAllListeners('removeListener');
+    this._events = {};
+    return this;
+  }
+
+  listeners = this._events[type];
+
+  if (isFunction(listeners)) {
+    this.removeListener(type, listeners);
+  } else if (listeners) {
+    // LIFO order
+    while (listeners.length)
+      this.removeListener(type, listeners[listeners.length - 1]);
+  }
+  delete this._events[type];
+
+  return this;
+};
+
+EventEmitter.prototype.listeners = function(type) {
+  var ret;
+  if (!this._events || !this._events[type])
+    ret = [];
+  else if (isFunction(this._events[type]))
+    ret = [this._events[type]];
+  else
+    ret = this._events[type].slice();
+  return ret;
+};
+
+EventEmitter.prototype.listenerCount = function(type) {
+  if (this._events) {
+    var evlistener = this._events[type];
+
+    if (isFunction(evlistener))
+      return 1;
+    else if (evlistener)
+      return evlistener.length;
+  }
+  return 0;
+};
+
+EventEmitter.listenerCount = function(emitter, type) {
+  return emitter.listenerCount(type);
+};
+
+function isFunction(arg) {
+  return typeof arg === 'function';
+}
+
+function isNumber(arg) {
+  return typeof arg === 'number';
+}
+
+function isObject(arg) {
+  return typeof arg === 'object' && arg !== null;
+}
+
+function isUndefined(arg) {
+  return arg === void 0;
+}
+
+},{}],2:[function(require,module,exports){
 /*
  *	Copyright 2014 Matthieu Nicolas
  *
@@ -45,7 +318,7 @@ module.exports = Mute;
  *  along with Mute-client.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-var events = _dereq_('events');
+var events = require('events');
 var UndoManager = ace.require('ace/undomanager').UndoManager;
 
 var INIT_MODE = -1;
@@ -402,7 +675,7 @@ AceEditorAdapter.prototype.onCoordinatorDisposedHandler = function (data) {
 };
 
 module.exports = AceEditorAdapter;
-},{"events":7}],3:[function(_dereq_,module,exports){
+},{"events":1}],3:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -425,14 +698,14 @@ module.exports = AceEditorAdapter;
 var ONLINE_MODE = 0;
 var OFFLINE_MODE = 1;
 
-var Utils = _dereq_('mute-utils');
-var events = _dereq_('events');
+var Utils = require('mute-utils');
+var events = require('events');
 
-var LogootSRopes = _dereq_('mute-structs').LogootSRopes;
-var TextInsert = _dereq_('mute-structs').TextInsert;
-var TextDelete = _dereq_('mute-structs').TextDelete;
-var LogootSAdd = _dereq_('mute-structs').LogootSAdd;
-var LogootSDel = _dereq_('mute-structs').LogootSDel;
+var LogootSRopes = require('mute-structs').LogootSRopes;
+var TextInsert = require('mute-structs').TextInsert;
+var TextDelete = require('mute-structs').TextDelete;
+var LogootSAdd = require('mute-structs').LogootSAdd;
+var LogootSDel = require('mute-structs').LogootSDel;
 
 var Coordinator = function (docID, serverDB) {
     var coordinator = this;
@@ -1030,8 +1303,37 @@ Coordinator.prototype.dispose = function () {
 
 module.exports = Coordinator;
 
-},{"events":7,"mute-structs":8,"mute-utils":24}],4:[function(_dereq_,module,exports){
-var events = _dereq_('events');
+},{"events":1,"mute-structs":8,"mute-utils":24}],4:[function(require,module,exports){
+/*
+ *	Copyright 2014 Matthieu Nicolas
+ *
+ *	This file is part of Mute-client.
+ *
+ *  Mute-client is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  Mute-client is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with Mute-client.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+Mute = {
+	Coordinator: require('./coordinator'),
+	SocketIOAdapter: require('./socket-io-adapter'),
+	AceEditorAdapter: require('./ace-editor-adapter'),
+	InfosUsersModule: require('./infos-users'),
+	PeerIOAdapter: require('./peer-io-adapter')
+};
+
+module.exports = Mute;
+},{"./ace-editor-adapter":2,"./coordinator":3,"./infos-users":5,"./peer-io-adapter":6,"./socket-io-adapter":7}],5:[function(require,module,exports){
+var events = require('events');
 
 var InfosUsersModule = function (docID, coordinator, editor, network, usernameManager, serverDB) {
     var infosUsersModule = this;
@@ -1434,8 +1736,8 @@ InfosUsersModule.prototype.onCoordinatorDisposedHandler = function () {
 };
 
 module.exports = InfosUsersModule;
-},{"events":7}],5:[function(_dereq_,module,exports){
-var events = _dereq_('events');
+},{"events":1}],6:[function(require,module,exports){
+var events = require('events');
 
 /*
 Data Object
@@ -1444,8 +1746,8 @@ data : message content
  */
 
 var Data = function(event, data){
-    this.event = event;
-    this.data = data;
+  this.event = event;
+  this.data = data;
 };
 
 /*
@@ -1455,13 +1757,13 @@ connection : connection between the current and the remote peer
 replicaNumber : replica number of the remote peer
  */
 
-var PeerInfo = function(connection){
-    this.connection = connection;
-    this.replicaNumber = null;
+var PeerInfo = function(id){
+  this.id = id;
+  this.replicaNumber = null;
 };
 
 PeerInfo.prototype.setReplicaNumber = function(replicaNumber){
-    this.replicaNumber = replicaNumber;
+  this.replicaNumber = replicaNumber;
 };
 
 /*
@@ -1470,394 +1772,332 @@ Initialize and manage web p2p network
  */
 
 var PeerIOAdapter = function(coordinator){
-    var peerIOAdapter = this;
+  var peerIOAdapter = this;
 
-    this.coordinator = coordinator; // coordinator of the current peer
-    this.peer = null; //peer object from peerJS API http://peerjs.com/
-    this.peers = []; //list of remote peers
-    this.peerId = null; //peerId of the current peer
-    this.socketServer = null;
-    this.connectionCreated = false;
-    this.infosUsersModule = null;
-    this.disposed = false;
-    this.joinDoc = false;
-    this.first = false;
-    this.replicaNumber = null; //replica number of the current peer
-    this.username = null; //username of current peer
-    this.defaultInfoUsers = null; //defaultInfosUsers genrated at the connection initialization
+  this.coordinator = coordinator; // coordinator of the current peer
+  this.webChannel = new nf.WebChannel(); //the main object of Netflux.js which replaces this.peer
+  this.peers = []; // Array[PeerInfo]
+  this.socketServer = null;
+  this.connectionCreated = false;
+  this.infosUsersModule = null;
+  this.disposed = false;
+  this.joinDoc = false;
+  this.first = false;
+  this.replicaNumber = null; //replica number of the current peer
+  this.username = null; //username of current peer
+  this.defaultInfoUsers = null; //defaultInfosUsers genrated at the connection initialization
 
-    this.coordinator.on('initNetwork', function (data) {
-        if(peerIOAdapter.disposed === false) {
-            peerIOAdapter.toOnlineMode();
-        }
-    });
+  this.coordinator.on('initNetwork', function (data) {
+    if(peerIOAdapter.disposed === false) {
+      peerIOAdapter.toOnlineMode();
+    }
+  });
 
-    this.coordinator.on('queryDoc', function (data) {
-        if(peerIOAdapter.disposed === false) {
-            data.username = peerIOAdapter.infosUsersModule.getUsername();
-        }
-    });
+  this.coordinator.on('queryDoc', function (data) {
+    if(peerIOAdapter.disposed === false) {
+      data.username = peerIOAdapter.infosUsersModule.getUsername();
+    }
+  });
 
-    this.coordinator.on('coordinatorDisposed', function (data) {
-        if(peerIOAdapter.disposed === false) {
-            peerIOAdapter.onCoordinatorDisposedHandler(data);
-        }
-    });
-    this.coordinator.on('doc', function (args){
-        //Give a copy of the document
-        console.log(args);
-        msg = {
-            ropes: args.ropes,
-            history: args.history,
-            bufferLogootSOp: args.bufferLogootSOp,
-            creationDate: args.creationDate,
-            lastModificationDate: args.lastModificationDate
-        };
-
-        var data = JSON.stringify(new Data('sendDoc', msg));
-
-        var connection = peerIOAdapter.getPeer(args.callerID );
-        console.log(connection);
-        if(connection !== null){
-            connection.send(data);
-        }
-
-    });
+  this.coordinator.on('coordinatorDisposed', function (data) {
+    if(peerIOAdapter.disposed === false) {
+      peerIOAdapter.onCoordinatorDisposedHandler(data);
+    }
+  });
+  this.coordinator.on('doc', function (args){
+    //Give a copy of the document
+    console.log(args);
+    msg = {
+      ropes: args.ropes,
+      history: args.history,
+      bufferLogootSOp: args.bufferLogootSOp,
+      creationDate: args.creationDate,
+      lastModificationDate: args.lastModificationDate
+    };
+    var data = JSON.stringify(new Data('sendDoc', msg));
+    peerIOAdapter.webChannel.sendTo(args.callerID, data);
+  });
 
 
-    this.coordinator.on('initDoc', function (args){
-        msg = {
-            ropes: args.ropes,
-            history: args.history,
-            bufferLogootSOp: args.bufferLogootSOp,
-            creationDate: args.creationDate,
-            lastModificationDate: args.lastModificationDate
-        };
-        peerIOAdapter.emit('receiveDoc', msg);
-    });
+  this.coordinator.on('initDoc', function (args){
+    msg = {
+      ropes: args.ropes,
+      history: args.history,
+      bufferLogootSOp: args.bufferLogootSOp,
+      creationDate: args.creationDate,
+      lastModificationDate: args.lastModificationDate
+    };
+    peerIOAdapter.emit('receiveDoc', msg);
+  });
 };
 
-PeerIOAdapter.prototype.__proto__ = events.EventEmitter.prototype;
+PeerIOAdapter.prototype = Object.create(events.EventEmitter.prototype);
 
 
 PeerIOAdapter.prototype.setInfosUsersModule = function(infosUsers){
-    var peerIOAdapter = this;
-    this.infosUsersModule = infosUsersModule;
+  var peerIOAdapter = this;
+  this.infosUsersModule = infosUsersModule;
 
-    infosUsersModule.on('changeLocalCursorAndSelections', function (data) {
-        data.replicaNumber = peerIOAdapter.replicaNumber;
-        if(peerIOAdapter.disposed === false) {
-            for (var i = 0; i < peerIOAdapter.peers.length; i++) {
-                var newData = JSON.stringify(new Data('broadcastCollaboratorCursorAndSelections', data));
-                peerIOAdapter.peers[i].connection.send(newData);
-            }
-        }
-    });
+  infosUsersModule.on('changeLocalCursorAndSelections', function (data) {
+    data.replicaNumber = peerIOAdapter.replicaNumber;
+    if(peerIOAdapter.disposed === false) {
+      var newData = JSON.stringify(new Data('broadcastCollaboratorCursorAndSelections', data));
+      peerIOAdapter.webChannel.send(newData);
+    }
+  });
 
-    infosUsersModule.on('changeLocalUsername', function (data) {
-        data.replicaNumber = peerIOAdapter.replicaNumber;
-        if(peerIOAdapter.disposed === false) {
-            for (var i = 0; i < peerIOAdapter.peers.length; i++) {
-                var newData = JSON.stringify(new Data('broadcastCollaboratorUsername', data));
-                peerIOAdapter.peers[i].connection.send(newData);
-            }
-        }
-    });
+  infosUsersModule.on('changeLocalUsername', function (data) {
+    data.replicaNumber = peerIOAdapter.replicaNumber;
+    if(peerIOAdapter.disposed === false && peerIOAdapter.webChannel.channels.size !== 0) {
+      var newData = JSON.stringify(new Data('broadcastCollaboratorUsername', data));
+      peerIOAdapter.webChannel.send(newData);
+    }
+  });
 
 };
 
-PeerIOAdapter.prototype.createSocket = function () {
-    var peerIOAdapter = this;
-    this.peers = [];// empty the remote peers list
-    var connOptions = {
-        'sync disconnect on unload': true
-    };
-
-    this.socketServer = io.connect(location.origin, connOptions);
-    /*
-    You can use the signaling server set up on the mute server demo, to do that, you have just to uncomment the two following lines and comment the third
-    WARNING : some troubles were encountred with firefox browser
-    */
-    //var peerServerId = Math.floor(Math.random()*100000).toString();
-    //this.peer = new Peer(peerServerId, {host: '/', port: 8080, path: '/peerjs'}); //signaling server on mute demo server
-    this.peer = new Peer({key: 'lwjd5qra8257b9', debug : true}); // actually using a foreign signaling server
-    this.peer.on('open', function(id){
-        peerIOAdapter.peerId = id;
-        var infoPeer = {
-            docID : peerIOAdapter.coordinator.docID,
-            peerID : id
-        };
-        peerIOAdapter.socketServer.emit('newPeer', infoPeer);
-    });
-
-    function connect (connection){ //Initialize connection with remote peer
-        console.log('connection');
-        if(!peerIOAdapter.peerAlreadyExists(connection)){
-            console.log(connection);
-
-            var peerInfo = new PeerInfo(connection);
-            peerIOAdapter.peers.push(peerInfo);
-
-            connection.on('data', handleEvent); // data receiving
-
-            connection.on('close', function(){
-                //connection closing
-                var replicaNumber = peerIOAdapter.getReplicaNumber(connection.peer);
-                peerIOAdapter.emit('removeUser', replicaNumber);
-                this.close();
-                var index = peerIOAdapter.peers.indexOf(this);
-                peerIOAdapter.peers.splice(index, 1);
-            });
-
-            if(!peerIOAdapter.joinDoc && !peerIOAdapter.first){
-                peerIOAdapter.joinDoc = true;
-                var msg = JSON.stringify(new Data('joinDoc', peerIOAdapter.peerId));
-                connection.send(msg);
-            }
-            var data = {
-                peerId : peerIOAdapter.peerId,
-                replicaNumber : peerIOAdapter.replicaNumber,
-                username : peerIOAdapter.username
-            };
-            var request = JSON.stringify(new Data('queryUserInfo', data));
-            connection.send(request);
-        }
+PeerIOAdapter.prototype.handleEvent = function (args) {
+  //manage data receiving
+  console.log('HandleEvent');
+  console.log(args);
+  try {
+    var data = JSON.parse(args);
+    if (data.event !== null && data.event !== undefined && this.disposed === false) {
+      switch (data.event) {
+        case 'sendOps':
+          data.data.replicaNumber = this.replicaNumber;
+          this.emit('receiveOps', data.data);
+          break;
+        case 'sendDoc':
+          data.data.replicaNumber = this.replicaNumber;
+          data.data.infosUsers = this.defaultInfoUsers;
+          console.log('receiveOps');
+          this.emit('receiveDoc', data.data);
+          this.emit('receiveDocPeer', data.data);
+          break;
+        case 'queryUserInfo':
+          var remotePeerId = data.data.peerId;
+          this.emit('addUser', data.data.replicaNumber, data.data.username);
+          this.setReplicaNumber(remotePeerId, data.data.replicaNumber);
+          data = {
+              peerId : this.webChannel.myId,
+              replicaNumber : this.replicaNumber,
+              username : this.username
+          };
+          var msg = JSON.stringify(new Data('addUser', data));
+          this.webChannel.sendTo(remotePeerId, msg);
+          break;
+        case 'addUser':
+          console.log('addUser');
+          this.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
+          this.emit('addUser', data.data.replicaNumber, data.data.username);
+          break;
+        case 'broadcastCollaboratorCursorAndSelections':
+          this.emit('changeCollaboratorCursorAndSelections', data.data);
+          break;
+        case 'broadcastCollaboratorUsername':
+          this.emit('changeCollaboratorUsername', data.data);
+          break;
+        case 'broadcastParole':
+          this.emit('receiveParole', data.data);
+          break;
+        case 'connect':
+          this.emit('connect');
+          break;
+        case 'userJoin':
+          this.emit('receiveUserJoin', data.data);
+          break;
+        case 'userLeft':
+          this.emit('receiveUserLeft', data.data);
+          break;
+        case 'joinDoc':
+          this.coordinator.giveCopy(data.data);
+          break;
+        default :
+          console.log('handleEvent : ERROR !');
+          break;
+      }
     }
-
-    function handleEvent(args){
-        //manage data receiving
-        console.log('HandleEvent');
-        console.log(args);
-        try{
-            var data = JSON.parse(args);
-            if(data.event !== null && data.event !== undefined && peerIOAdapter.disposed === false){
-                switch(data.event){
-                    case 'sendOps':
-                        data.data.replicaNumber = peerIOAdapter.replicaNumber;
-                        peerIOAdapter.emit('receiveOps', data.data);
-                        break;
-                    case 'sendDoc':
-                            data.data.replicaNumber = peerIOAdapter.replicaNumber;
-                            data.data.infosUsers = peerIOAdapter.defaultInfoUsers;
-                            console.log('receiveOps');
-                            peerIOAdapter.emit('receiveDoc', data.data);
-                            peerIOAdapter.emit('receiveDocPeer', data.data);
-                        break;
-                    case 'queryUserInfo' :
-                        var peerId = data.data.peerId;
-                        peerIOAdapter.emit('addUser', data.data.replicaNumber, data.data.username);
-                        peerIOAdapter.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
-                        data = {
-                            peerId : peerIOAdapter.peerId,
-                            replicaNumber : peerIOAdapter.replicaNumber,
-                            username : peerIOAdapter.username
-                        };
-                        var msg = JSON.stringify(new Data('addUser', data));
-                        var connection = peerIOAdapter.getPeer(peerId );
-                        if(connection !== null){
-                            connection.send(msg);
-                        }
-                        break;
-                    case 'addUser' :
-                        console.log('addUser');
-                        peerIOAdapter.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
-                        peerIOAdapter.emit('addUser', data.data.replicaNumber, data.data.username);
-                        break;
-                    case 'broadcastCollaboratorCursorAndSelections':
-                        peerIOAdapter.emit('changeCollaboratorCursorAndSelections', data.data);
-                        break;
-                    case 'broadcastCollaboratorUsername' :
-                        peerIOAdapter.emit('changeCollaboratorUsername', data.data);
-                        break;
-                    case 'broadcastParole' :
-                        peerIOAdapter.emit('receiveParole', data.data);
-                        break;
-                    case 'connect' :
-                        peerIOAdapter.emit('connect');
-                        break;
-                    case 'userJoin' :
-                        peerIOAdapter.emit('receiveUserJoin', data.data);
-                        break;
-                    case 'userLeft' :
-                        peerIOAdapter.emit('receiveUserLeft', data.data);
-                        break;
-                    case 'joinDoc' :
-                        peerIOAdapter.coordinator.giveCopy(data.data);
-                        break;
-                    default :
-                        console.log('handleEvent : ERROR !');
-                        break;
-                }
-            }
-        }catch(e){
-            console.log('ERROR JSON PARSING');
-        }
-
-    }
-
-    function addCollaborator(remoteId){
-        var connection = peerIOAdapter.peer.connect(remoteId);
-        console.log("Add collaborator");
-        console.log(connection);
-        connection.on('open', function() {
-            console.log('OPEN');
-            connect(connection);
-        });
-    }
-
-    this.socketServer.on('infoPeerIDs', function(infoPeerIds){
-        /* Receiving informations from server
-            infoPeerIds = {
-                peers : [], //remote peers already connected to the room
-                replicaNumber //replica number of the current peer given by the server
-            }
-         */
-        peerIOAdapter.emit('connect');
-        console.log(infoPeerIds);
-
-        var peerIds = infoPeerIds.peers;
-
-        peerIOAdapter.replicaNumber = infoPeerIds.replicaNumber;
-        peerIOAdapter.username = "User " + peerIOAdapter.replicaNumber;
-
-        peerIOAdapter.defaultInfoUsers = {};
-        peerIOAdapter.defaultInfoUsers[peerIOAdapter.replicaNumber] = {
-                cursorIndex: 0,
-                selections: [],
-                username: peerIOAdapter.username
-            };
-
-        if(peerIds.length === 0){
-            peerIOAdapter.first = true;
-            peerIOAdapter.joinDoc = true;
-            peerIOAdapter.coordinator.giveCopy(null);
-
-            var data = {};
-            data.replicaNumber = peerIOAdapter.replicaNumber;
-            data.infosUsers = peerIOAdapter.defaultInfoUsers;
-            peerIOAdapter.emit('receiveDocPeer', data);
-        }
-        for(var i = 0; i < peerIds.length; i++){
-            console.log('Add Peer : ' + peerIds[i]);
-            var remoteId = peerIds[i];
-            addCollaborator(remoteId);
-        }
-    });
-
-    this.peer.on('connection', connect);
-
-    this.coordinator.on('operations', function (logootSOperations) {
-        if(peerIOAdapter.disposed === false) {
-            peerIOAdapter.send(logootSOperations);
-        }
-    });
-
-    this.coordinator.on('disconnect', function () {
-        if(peerIOAdapter.disposed === false) {
-            peerIOAdapter.toOfflineMode();
-        }
-    });
-
-    this.connectionCreated = true;
-    this.emit('connect');
-
+  } catch (e) {
+    console.log('ERROR JSON PARSING');
+  }
 };
 
-
-PeerIOAdapter.prototype.peerAlreadyExists = function(connection){
-    for(var i = 0; i < this.peers.length; i++){
-        if(this.peers[i].peer === connection.peer){
-            return true;
-        }
-    }
-    return false;
+PeerIOAdapter.prototype.whenPeerIdReady = function () {
+  var userInfo = {
+    peerId : this.webChannel.myId,
+    replicaNumber : this.replicaNumber,
+    username : this.username
+  };
+  console.log('NETFLUX: WebChannel whenPeerIdReady: ' + this.webChannel.id + '   -   ', this.webChannel.manager);
+  this.webChannel.send(JSON.stringify(new Data('queryUserInfo', userInfo)));
+  if (!this.joinDoc && !this.first) {
+    this.joinDoc = true;
+    this.webChannel.send(JSON.stringify(new Data('joinDoc', this.webChannel.myId)));
+  }
 };
 
 PeerIOAdapter.prototype.toOnlineMode = function () {
-    this.createSocket();
+  var peerIOAdapter = this;
+  var connOptions = { 'sync disconnect on unload': true };
+  this.socketServer = io.connect(location.origin, connOptions);
+  /*
+  You can use the signaling server set up on the mute server demo, to do that, you have just to uncomment the two following lines and comment the third
+  WARNING : some troubles were encountred with firefox browser
+  */
+  //var peerServerId = Math.floor(Math.random()*100000).toString();
+  //this.peer = new Peer(peerServerId, {host: '/', port: 8080, path: '/peerjs'}); //signaling server on mute demo server
+  /* Netflux */
+  this.webChannel = new nf.WebChannel();
+  console.log('NETFLUX: WebChannel created: ' + this.webChannel.id);
+  this.webChannel.onJoining = function (id) {
+    peerIOAdapter.peers.push(new PeerInfo(id));
+    console.log('NETFLUX: joined: ' + id);
+  };
+  this.webChannel.onLeaving = function(id){
+    peerIOAdapter.emit('removeUser', peerIOAdapter.getReplicaNumber(id));
+    // TODO: understand why need -> this.close();
+    var peerToRemove;
+    for (var i in peerIOAdapter.peers) {
+      if (id === peerIOAdapter.peers[i].id) {
+        peerIOAdapter.peers.splice(i, 1);
+        break;
+      }
+    }
+  };
+  this.webChannel.onMessage = function (id, msg) { peerIOAdapter.handleEvent(msg); };
+  var infoPeer = {
+    docId : peerIOAdapter.coordinator.docID,
+    wcId: peerIOAdapter.webChannel.id
+  };
+  peerIOAdapter.socketServer.emit('newPeer', infoPeer);
+
+  this.socketServer.on('newPeerResponce', function (msg) {
+    /* Receiving informations from server
+        infoPeerIds = {
+            replicaNumber //replica number of the current peer given by the server
+            wcId: // webChannel id. If present, then you must join the webChannel, otherwise open for joining.
+        }
+     */
+
+    peerIOAdapter.emit('connect');
+    peerIOAdapter.replicaNumber = msg.replicaNumber;
+    peerIOAdapter.username = "User " + peerIOAdapter.replicaNumber;
+    peerIOAdapter.defaultInfoUsers = {};
+    peerIOAdapter.defaultInfoUsers[peerIOAdapter.replicaNumber] = {
+      cursorIndex: 0,
+      selections: [],
+      username: peerIOAdapter.username
+    };
+
+    var wc = peerIOAdapter.webChannel;
+    console.log('NETFLUX newPeerResponce: ', msg);
+    if (msg.action === 'join') {
+      wc.join(msg.key).then(function() {
+        console.log('NETFLUX (' + wc.myId + '): webChannel JOIN ');
+        wc.send('NETFLUX: HELOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO');
+        wc.channels.forEach(function (ch) {
+          peerIOAdapter.peers.push(new PeerInfo(ch.peerId));
+        });
+        peerIOAdapter.whenPeerIdReady();
+      });
+    } else if (msg.action === 'open') {
+      var key = wc.openForJoining();
+      console.log('NETFLUX (' + wc.myId + '): webChannel OPEN ');
+      peerIOAdapter.first = true;
+      peerIOAdapter.joinDoc = true;
+      peerIOAdapter.coordinator.giveCopy(null);
+
+      var data = {
+        replicaNumber: peerIOAdapter.replicaNumber,
+        infosUsers: peerIOAdapter.defaultInfoUsers
+      };
+      peerIOAdapter.emit('receiveDocPeer', data);
+      peerIOAdapter.whenPeerIdReady();
+    }
+  });
+
+  this.coordinator.on('operations', function (logootSOperations) {
+    if(peerIOAdapter.disposed === false) {
+      var obj = {
+          'logootSOperations': logootSOperations,
+          'lastModificationDate': new Date()
+      };
+      var data = new Data('sendOps', obj);
+      peerIOAdapter.webChannel.send(JSON.stringify(data));
+    }
+  });
+
+  this.coordinator.on('disconnect', function () {
+    if(peerIOAdapter.disposed === false) {
+      peerIOAdapter.toOfflineMode();
+    }
+  });
+
+  this.connectionCreated = true;
+  this.emit('connect');
 };
 
 PeerIOAdapter.prototype.toOfflineMode = function () {
-    if(this.socketServer !== null && this.socketServer !== undefined) {
-        this.socketServer.disconnect();
-        this.emptyPeers();
-    }
-
-};
-
-PeerIOAdapter.prototype.emptyPeers = function() {
-    for(var i = 0; i < this.peers.length; i ++){
-        this.peers[i].connection.close();
-    }
+  if(this.socketServer !== null && this.socketServer !== undefined) {
+    this.socketServer.disconnect();
+    this.webChannel.leave();
     this.peers = [];
+  }
 };
-
 PeerIOAdapter.prototype.send = function (logootSOperations) {
-    var socketIOAdapter = this;
-    var obj = {
-        'logootSOperations': logootSOperations,
-        'lastModificationDate': new Date()
-    };
-    var data = new Data('sendOps', obj);
-    var newData = JSON.stringify(data);
-    for(var i = 0; i < this.peers.length; i++){
-        this.peers[i].connection.send(newData);
-    }
+  var obj = {
+    'logootSOperations': logootSOperations,
+    'lastModificationDate': new Date()
+  };
+  this.webChannel.send(JSON.stringify(new Data('sendOps', obj)));
 };
 
 PeerIOAdapter.prototype.onCoordinatorDisposedHandler = function () {
-    var key;
-
-    this.emit('networkDisposed');
-
-    if(this.socket !== null && this.socket !== undefined) {
-        this.socket.disconnect();
-        this.emptyPeers();
+  this.emit('networkDisposed');
+  this.toOfflineMode();
+  for (var key in this) {
+    if (this.hasOwnProperty(key) === true) {
+      if (key === 'disposed') {
+        this.disposed = true;
+      }
+      else {
+        this[key] = null;
+      }
     }
-
-    for(key in this) {
-        if(this.hasOwnProperty(key) === true) {
-            if(key === 'disposed') {
-                this.disposed = true;
-            }
-            else {
-                this[key] = null;
-            }
-        }
-    }
+  }
 };
 
 PeerIOAdapter.prototype.getPeer = function(peerId) {
-    for (var i = 0; i < this.peers.length; i++) {
-        if(this.peers[i].connection.peer === peerId){
-            return this.peers[i].connection;
-        }
+  for (var i = 0; i < this.peers.length; i++) {
+    if(this.peers[i].id === peerId){
+      return this.peers[i];
     }
-    return null;
+  }
+  return null;
 };
 
 PeerIOAdapter.prototype.getReplicaNumber = function(peerId) {
-    for (var i = 0; i < this.peers.length; i++) {
-        if(this.peers[i].connection.peer === peerId){
-            console.log(this.peers[i]);
-            return this.peers[i].replicaNumber;
-        }
+  for (var i = 0; i < this.peers.length; i++) {
+    if(this.peers[i].id === peerId){
+      return this.peers[i].replicaNumber;
     }
-    return null;
+  }
+  return null;
 };
 
 PeerIOAdapter.prototype.setReplicaNumber = function(peerID, replicaNumber) {
-    for (var i = 0; i < this.peers.length; i++) {
-        if(this.peers[i].connection.peer === peerID){
-            this.peers[i].setReplicaNumber(replicaNumber);
-            break;
-        }
+  for (var i = 0; i < this.peers.length; i++) {
+    if(this.peers[i].id === peerID){
+      this.peers[i].setReplicaNumber(replicaNumber);
+      break;
     }
+  }
 };
 
 module.exports = PeerIOAdapter;
 
-},{"events":7}],6:[function(_dereq_,module,exports){
+},{"events":1}],7:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -1877,7 +2117,7 @@ module.exports = PeerIOAdapter;
  *  along with Mute-client.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-var events = _dereq_('events');
+var events = require('events');
 
 var SocketIOAdapter = function (coordinator) {
     var socketIOAdapter = this;
@@ -2074,310 +2314,7 @@ SocketIOAdapter.prototype.onCoordinatorDisposedHandler = function () {
 
 module.exports = SocketIOAdapter;
 
-},{"events":7}],7:[function(_dereq_,module,exports){
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-function EventEmitter() {
-  this._events = this._events || {};
-  this._maxListeners = this._maxListeners || undefined;
-}
-module.exports = EventEmitter;
-
-// Backwards-compat with node 0.10.x
-EventEmitter.EventEmitter = EventEmitter;
-
-EventEmitter.prototype._events = undefined;
-EventEmitter.prototype._maxListeners = undefined;
-
-// By default EventEmitters will print a warning if more than 10 listeners are
-// added to it. This is a useful default which helps finding memory leaks.
-EventEmitter.defaultMaxListeners = 10;
-
-// Obviously not all Emitters should be limited to 10. This function allows
-// that to be increased. Set to zero for unlimited.
-EventEmitter.prototype.setMaxListeners = function(n) {
-  if (!isNumber(n) || n < 0 || isNaN(n))
-    throw TypeError('n must be a positive number');
-  this._maxListeners = n;
-  return this;
-};
-
-EventEmitter.prototype.emit = function(type) {
-  var er, handler, len, args, i, listeners;
-
-  if (!this._events)
-    this._events = {};
-
-  // If there is no 'error' event listener then throw.
-  if (type === 'error') {
-    if (!this._events.error ||
-        (isObject(this._events.error) && !this._events.error.length)) {
-      er = arguments[1];
-      if (er instanceof Error) {
-        throw er; // Unhandled 'error' event
-      }
-      throw TypeError('Uncaught, unspecified "error" event.');
-    }
-  }
-
-  handler = this._events[type];
-
-  if (isUndefined(handler))
-    return false;
-
-  if (isFunction(handler)) {
-    switch (arguments.length) {
-      // fast cases
-      case 1:
-        handler.call(this);
-        break;
-      case 2:
-        handler.call(this, arguments[1]);
-        break;
-      case 3:
-        handler.call(this, arguments[1], arguments[2]);
-        break;
-      // slower
-      default:
-        len = arguments.length;
-        args = new Array(len - 1);
-        for (i = 1; i < len; i++)
-          args[i - 1] = arguments[i];
-        handler.apply(this, args);
-    }
-  } else if (isObject(handler)) {
-    len = arguments.length;
-    args = new Array(len - 1);
-    for (i = 1; i < len; i++)
-      args[i - 1] = arguments[i];
-
-    listeners = handler.slice();
-    len = listeners.length;
-    for (i = 0; i < len; i++)
-      listeners[i].apply(this, args);
-  }
-
-  return true;
-};
-
-EventEmitter.prototype.addListener = function(type, listener) {
-  var m;
-
-  if (!isFunction(listener))
-    throw TypeError('listener must be a function');
-
-  if (!this._events)
-    this._events = {};
-
-  // To avoid recursion in the case that type === "newListener"! Before
-  // adding it to the listeners, first emit "newListener".
-  if (this._events.newListener)
-    this.emit('newListener', type,
-              isFunction(listener.listener) ?
-              listener.listener : listener);
-
-  if (!this._events[type])
-    // Optimize the case of one listener. Don't need the extra array object.
-    this._events[type] = listener;
-  else if (isObject(this._events[type]))
-    // If we've already got an array, just append.
-    this._events[type].push(listener);
-  else
-    // Adding the second element, need to change to array.
-    this._events[type] = [this._events[type], listener];
-
-  // Check for listener leak
-  if (isObject(this._events[type]) && !this._events[type].warned) {
-    var m;
-    if (!isUndefined(this._maxListeners)) {
-      m = this._maxListeners;
-    } else {
-      m = EventEmitter.defaultMaxListeners;
-    }
-
-    if (m && m > 0 && this._events[type].length > m) {
-      this._events[type].warned = true;
-      console.error('(node) warning: possible EventEmitter memory ' +
-                    'leak detected. %d listeners added. ' +
-                    'Use emitter.setMaxListeners() to increase limit.',
-                    this._events[type].length);
-      if (typeof console.trace === 'function') {
-        // not supported in IE 10
-        console.trace();
-      }
-    }
-  }
-
-  return this;
-};
-
-EventEmitter.prototype.on = EventEmitter.prototype.addListener;
-
-EventEmitter.prototype.once = function(type, listener) {
-  if (!isFunction(listener))
-    throw TypeError('listener must be a function');
-
-  var fired = false;
-
-  function g() {
-    this.removeListener(type, g);
-
-    if (!fired) {
-      fired = true;
-      listener.apply(this, arguments);
-    }
-  }
-
-  g.listener = listener;
-  this.on(type, g);
-
-  return this;
-};
-
-// emits a 'removeListener' event iff the listener was removed
-EventEmitter.prototype.removeListener = function(type, listener) {
-  var list, position, length, i;
-
-  if (!isFunction(listener))
-    throw TypeError('listener must be a function');
-
-  if (!this._events || !this._events[type])
-    return this;
-
-  list = this._events[type];
-  length = list.length;
-  position = -1;
-
-  if (list === listener ||
-      (isFunction(list.listener) && list.listener === listener)) {
-    delete this._events[type];
-    if (this._events.removeListener)
-      this.emit('removeListener', type, listener);
-
-  } else if (isObject(list)) {
-    for (i = length; i-- > 0;) {
-      if (list[i] === listener ||
-          (list[i].listener && list[i].listener === listener)) {
-        position = i;
-        break;
-      }
-    }
-
-    if (position < 0)
-      return this;
-
-    if (list.length === 1) {
-      list.length = 0;
-      delete this._events[type];
-    } else {
-      list.splice(position, 1);
-    }
-
-    if (this._events.removeListener)
-      this.emit('removeListener', type, listener);
-  }
-
-  return this;
-};
-
-EventEmitter.prototype.removeAllListeners = function(type) {
-  var key, listeners;
-
-  if (!this._events)
-    return this;
-
-  // not listening for removeListener, no need to emit
-  if (!this._events.removeListener) {
-    if (arguments.length === 0)
-      this._events = {};
-    else if (this._events[type])
-      delete this._events[type];
-    return this;
-  }
-
-  // emit removeListener for all listeners on all events
-  if (arguments.length === 0) {
-    for (key in this._events) {
-      if (key === 'removeListener') continue;
-      this.removeAllListeners(key);
-    }
-    this.removeAllListeners('removeListener');
-    this._events = {};
-    return this;
-  }
-
-  listeners = this._events[type];
-
-  if (isFunction(listeners)) {
-    this.removeListener(type, listeners);
-  } else {
-    // LIFO order
-    while (listeners.length)
-      this.removeListener(type, listeners[listeners.length - 1]);
-  }
-  delete this._events[type];
-
-  return this;
-};
-
-EventEmitter.prototype.listeners = function(type) {
-  var ret;
-  if (!this._events || !this._events[type])
-    ret = [];
-  else if (isFunction(this._events[type]))
-    ret = [this._events[type]];
-  else
-    ret = this._events[type].slice();
-  return ret;
-};
-
-EventEmitter.listenerCount = function(emitter, type) {
-  var ret;
-  if (!emitter._events || !emitter._events[type])
-    ret = 0;
-  else if (isFunction(emitter._events[type]))
-    ret = 1;
-  else
-    ret = emitter._events[type].length;
-  return ret;
-};
-
-function isFunction(arg) {
-  return typeof arg === 'function';
-}
-
-function isNumber(arg) {
-  return typeof arg === 'number';
-}
-
-function isObject(arg) {
-  return typeof arg === 'object' && arg !== null;
-}
-
-function isUndefined(arg) {
-  return arg === void 0;
-}
-
-},{}],8:[function(_dereq_,module,exports){
+},{"events":1}],8:[function(require,module,exports){
 /*
  *	Copyright 2014 Matthieu Nicolas
  *
@@ -2394,9 +2331,9 @@ function isUndefined(arg) {
  *	You should have received a copy of the GNU General Public License
  *	along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-module.exports = _dereq_('./lib/index');
+module.exports = require('./lib/index');
 
-},{"./lib/index":12}],9:[function(_dereq_,module,exports){
+},{"./lib/index":12}],9:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2542,7 +2479,7 @@ Identifier.prototype.maxOffsetBeforeNex = function (next, max) {
 
 module.exports = Identifier;
 
-},{}],10:[function(_dereq_,module,exports){
+},{}],10:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2615,7 +2552,7 @@ IdentifierInterval.prototype.toString = function () {
 
 module.exports = IdentifierInterval;
 
-},{}],11:[function(_dereq_,module,exports){
+},{}],11:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2663,7 +2600,7 @@ module.exports = {
     }
 };
 
-},{}],12:[function(_dereq_,module,exports){
+},{}],12:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2683,23 +2620,23 @@ module.exports = {
  *  along with Mute-structs.  If not, see <http://www.gnu.org/licenses/>.
  */
  module.exports = {
-    "Identifier"     : _dereq_('./identifier'),
-    "IdentifierInterval"     : _dereq_('./identifierinterval'),
-    "IDFactory"     : _dereq_('./idfactory'),
-    "InfiniteString"      : _dereq_('./infinitestring'),
-    "Iterator"    : _dereq_('./iterator'),
-    "IteratorHelperIdentifier" : _dereq_('./iteratorhelperidentifier'),
-    "LogootSAdd"  : _dereq_('./logootsadd'),
-    "LogootSBlock"  : _dereq_('./logootsblock'),
-    "LogootSDel"  : _dereq_('./logootsdel'),
-    "LogootSRopes"  : _dereq_('./logootsropes'),
-    "ResponseIntNode"  : _dereq_('./responseintnode'),
-    "RopesNodes"  : _dereq_('./ropesnodes'),
-    "TextDelete": _dereq_('./textdelete'),
-    "TextInsert"    : _dereq_('./textinsert')
+    "Identifier"     : require('./identifier'),
+    "IdentifierInterval"     : require('./identifierinterval'),
+    "IDFactory"     : require('./idfactory'),
+    "InfiniteString"      : require('./infinitestring'),
+    "Iterator"    : require('./iterator'),
+    "IteratorHelperIdentifier" : require('./iteratorhelperidentifier'),
+    "LogootSAdd"  : require('./logootsadd'),
+    "LogootSBlock"  : require('./logootsblock'),
+    "LogootSDel"  : require('./logootsdel'),
+    "LogootSRopes"  : require('./logootsropes'),
+    "ResponseIntNode"  : require('./responseintnode'),
+    "RopesNodes"  : require('./ropesnodes'),
+    "TextDelete": require('./textdelete'),
+    "TextInsert"    : require('./textinsert')
 };
 
-},{"./identifier":9,"./identifierinterval":10,"./idfactory":11,"./infinitestring":13,"./iterator":14,"./iteratorhelperidentifier":15,"./logootsadd":16,"./logootsblock":17,"./logootsdel":18,"./logootsropes":19,"./responseintnode":20,"./ropesnodes":21,"./textdelete":22,"./textinsert":23}],13:[function(_dereq_,module,exports){
+},{"./identifier":9,"./identifierinterval":10,"./idfactory":11,"./infinitestring":13,"./iterator":14,"./iteratorhelperidentifier":15,"./logootsadd":16,"./logootsblock":17,"./logootsdel":18,"./logootsropes":19,"./responseintnode":20,"./ropesnodes":21,"./textdelete":22,"./textinsert":23}],13:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2736,7 +2673,7 @@ InfiniteString.prototype.next = function () {
 
 module.exports = InfiniteString;
 
-},{}],14:[function(_dereq_,module,exports){
+},{}],14:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2784,7 +2721,7 @@ Iterator.prototype.next = function () {
 
 module.exports = Iterator;
 
-},{}],15:[function(_dereq_,module,exports){
+},{}],15:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2872,7 +2809,7 @@ IteratorHelperIdentifier.prototype.computeResults = function() {
 
 module.exports = IteratorHelperIdentifier;
 
-},{}],16:[function(_dereq_,module,exports){
+},{}],16:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2913,7 +2850,7 @@ LogootSAdd.prototype.execute = function (doc) {
 
 module.exports = LogootSAdd;
 
-},{}],17:[function(_dereq_,module,exports){
+},{}],17:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -2975,7 +2912,7 @@ LogootSBlock.prototype.toString = function() {
 
 module.exports = LogootSBlock;
 
-},{}],18:[function(_dereq_,module,exports){
+},{}],18:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3021,7 +2958,7 @@ LogootSDel.prototype.execute = function (doc) {
 
 module.exports = LogootSDel;
 
-},{}],19:[function(_dereq_,module,exports){
+},{}],19:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3040,21 +2977,21 @@ module.exports = LogootSDel;
  *  You should have received a copy of the GNU General Public License
  *  along with Mute-structs.  If not, see <http://www.gnu.org/licenses/>.
  */
- Utils = _dereq_('mute-utils');
+ Utils = require('mute-utils');
 
-Identifier = _dereq_('./identifier');
-IdentifierInterval = _dereq_('./identifierinterval');
-IDFactory = _dereq_('./idfactory');
-InfiniteString = _dereq_('./infinitestring');
-Iterator = _dereq_('./iterator');
-IteratorHelperIdentifier = _dereq_('./iteratorhelperidentifier');
-LogootSAdd = _dereq_('./logootsadd');
-LogootSBlock = _dereq_('./logootsblock');
-LogootSDel = _dereq_('./logootsdel');
-ResponseIntNode = _dereq_('./responseintnode');
-RopesNodes = _dereq_('./ropesnodes');
-TextDelete = _dereq_('./textdelete');
-TextInsert = _dereq_('./textinsert');
+Identifier = require('./identifier');
+IdentifierInterval = require('./identifierinterval');
+IDFactory = require('./idfactory');
+InfiniteString = require('./infinitestring');
+Iterator = require('./iterator');
+IteratorHelperIdentifier = require('./iteratorhelperidentifier');
+LogootSAdd = require('./logootsadd');
+LogootSBlock = require('./logootsblock');
+LogootSDel = require('./logootsdel');
+ResponseIntNode = require('./responseintnode');
+RopesNodes = require('./ropesnodes');
+TextDelete = require('./textdelete');
+TextInsert = require('./textinsert');
 
 var LogootSRopes = function (replicaNumber) {
     this.replicaNumber = replicaNumber || 0;
@@ -3796,7 +3733,7 @@ LogootSRopes.prototype.viewLength = function () {
 
 module.exports = LogootSRopes;
 
-},{"./identifier":9,"./identifierinterval":10,"./idfactory":11,"./infinitestring":13,"./iterator":14,"./iteratorhelperidentifier":15,"./logootsadd":16,"./logootsblock":17,"./logootsdel":18,"./responseintnode":20,"./ropesnodes":21,"./textdelete":22,"./textinsert":23,"mute-utils":24}],20:[function(_dereq_,module,exports){
+},{"./identifier":9,"./identifierinterval":10,"./idfactory":11,"./infinitestring":13,"./iterator":14,"./iteratorhelperidentifier":15,"./logootsadd":16,"./logootsblock":17,"./logootsdel":18,"./responseintnode":20,"./ropesnodes":21,"./textdelete":22,"./textinsert":23,"mute-utils":24}],20:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -3823,7 +3760,7 @@ var ResponseIntNode = function (i, node, path) {
 
 module.exports = ResponseIntNode;
 
-},{}],21:[function(_dereq_,module,exports){
+},{}],21:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -4083,7 +4020,7 @@ RopesNodes.prototype.copyFromJSON = function (node) {
 
 module.exports = RopesNodes;
 
-},{}],22:[function(_dereq_,module,exports){
+},{}],22:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -4113,7 +4050,7 @@ TextDelete.prototype.applyTo = function (doc) {
 
 module.exports = TextDelete;
 
-},{}],23:[function(_dereq_,module,exports){
+},{}],23:[function(require,module,exports){
 /*
  *  Copyright 2014 Matthieu Nicolas
  *
@@ -4143,7 +4080,7 @@ TextInsert.prototype.applyTo = function (doc) {
 
 module.exports = TextInsert;
 
-},{}],24:[function(_dereq_,module,exports){
+},{}],24:[function(require,module,exports){
 /*
  *	Copyright 2014 Matthieu Nicolas
  *
@@ -4271,6 +4208,4 @@ module.exports = {
 		return str.replace(re, 'U+FF0E');
 	}
 };
-},{}]},{},[1])
-(1)
-});
+},{}]},{},[4]);
