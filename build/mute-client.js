@@ -1771,11 +1771,11 @@ PeerIOAdapter Object
 Initialize and manage web p2p network
  */
 
-var PeerIOAdapter = function(coordinator){
+var PeerIOAdapter = function(coordinator, signaling){
   var peerIOAdapter = this;
 
   this.coordinator = coordinator; // coordinator of the current peer
-  this.webChannel = new nf.WebChannel(); //the main object of Netflux.js which replaces this.peer
+  this.webChannel = new nf.WebChannel({signaling: signaling}); //the main object of Netflux.js which replaces this.peer
   this.peers = []; // Array[PeerInfo]
   this.socketServer = null;
   this.connectionCreated = false;
@@ -1948,7 +1948,6 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
   //var peerServerId = Math.floor(Math.random()*100000).toString();
   //this.peer = new Peer(peerServerId, {host: '/', port: 8080, path: '/peerjs'}); //signaling server on mute demo server
   /* Netflux */
-  this.webChannel = new nf.WebChannel();
   console.log('NETFLUX: WebChannel created: ' + this.webChannel.id);
   this.webChannel.onJoining = function (id) {
     peerIOAdapter.peers.push(new PeerInfo(id));
