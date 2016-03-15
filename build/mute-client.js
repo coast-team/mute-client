@@ -1771,11 +1771,11 @@ PeerIOAdapter Object
 Initialize and manage web p2p network
  */
 
-var PeerIOAdapter = function(coordinator, signaling){
+var PeerIOAdapter = function(coordinator){
   var peerIOAdapter = this;
 
   this.coordinator = coordinator; // coordinator of the current peer
-  this.webChannel = new nf.WebChannel({signaling: signaling}); //the main object of Netflux.js which replaces this.peer
+  this.webChannel = new nf.WebChannel(); //the main object of Netflux.js which replaces this.peer
   this.peers = []; // Array[PeerInfo]
   this.socketServer = null;
   this.connectionCreated = false;
@@ -1806,7 +1806,6 @@ var PeerIOAdapter = function(coordinator, signaling){
   });
   this.coordinator.on('doc', function (args){
     //Give a copy of the document
-    console.log(args);
     msg = {
       ropes: args.ropes,
       history: args.history,
@@ -1847,6 +1846,7 @@ PeerIOAdapter.prototype.setInfosUsersModule = function(infosUsers){
   });
 
   infosUsersModule.on('changeLocalUsername', function (data) {
+    console.log('changeLocalUsername: ', data)
     data.replicaNumber = peerIOAdapter.replicaNumber;
     if(peerIOAdapter.disposed === false && peerIOAdapter.webChannel.channels.size !== 0) {
       var newData = JSON.stringify(new Data('broadcastCollaboratorUsername', data));
@@ -1858,8 +1858,7 @@ PeerIOAdapter.prototype.setInfosUsersModule = function(infosUsers){
 
 PeerIOAdapter.prototype.handleEvent = function (args) {
   //manage data receiving
-  console.log('HandleEvent');
-  console.log(args);
+  console.log('handleEvent', args);
   try {
     var data = JSON.parse(args);
     if (data.event !== null && data.event !== undefined && this.disposed === false) {
@@ -1871,7 +1870,6 @@ PeerIOAdapter.prototype.handleEvent = function (args) {
         case 'sendDoc':
           data.data.replicaNumber = this.replicaNumber;
           data.data.infosUsers = this.defaultInfoUsers;
-          console.log('receiveOps');
           this.emit('receiveDoc', data.data);
           this.emit('receiveDocPeer', data.data);
           break;
@@ -1888,7 +1886,6 @@ PeerIOAdapter.prototype.handleEvent = function (args) {
           this.webChannel.sendTo(remotePeerId, msg);
           break;
         case 'addUser':
-          console.log('addUser');
           this.setReplicaNumber(data.data.peerId, data.data.replicaNumber);
           this.emit('addUser', data.data.replicaNumber, data.data.username);
           break;
@@ -1929,11 +1926,11 @@ PeerIOAdapter.prototype.whenPeerIdReady = function () {
     replicaNumber : this.replicaNumber,
     username : this.username
   };
-  console.log('NETFLUX: WebChannel whenPeerIdReady: ' + this.webChannel.id + '   -   ', this.webChannel.manager);
   this.webChannel.send(JSON.stringify(new Data('queryUserInfo', userInfo)));
   if (!this.joinDoc && !this.first) {
     this.joinDoc = true;
-    this.webChannel.send(JSON.stringify(new Data('joinDoc', this.webChannel.myId)));
+    console.log("PEERS: ", this.peers)
+    this.webChannel.sendTo(this.peers[this.peers.length - 1].id, JSON.stringify(new Data('joinDoc', this.webChannel.myId)));
   }
 };
 
@@ -1948,10 +1945,9 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
   //var peerServerId = Math.floor(Math.random()*100000).toString();
   //this.peer = new Peer(peerServerId, {host: '/', port: 8080, path: '/peerjs'}); //signaling server on mute demo server
   /* Netflux */
-  console.log('NETFLUX: WebChannel created: ' + this.webChannel.id);
+  this.webChannel = new nf.WebChannel();
   this.webChannel.onJoining = function (id) {
     peerIOAdapter.peers.push(new PeerInfo(id));
-    console.log('NETFLUX: joined: ' + id);
   };
   this.webChannel.onLeaving = function(id){
     peerIOAdapter.emit('removeUser', peerIOAdapter.getReplicaNumber(id));
@@ -1990,19 +1986,19 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
     };
 
     var wc = peerIOAdapter.webChannel;
-    console.log('NETFLUX newPeerResponce: ', msg);
     if (msg.action === 'join') {
       wc.join(msg.key).then(function() {
-        console.log('NETFLUX (' + wc.myId + '): webChannel JOIN ');
-        wc.send('NETFLUX: HELOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO');
         wc.channels.forEach(function (ch) {
           peerIOAdapter.peers.push(new PeerInfo(ch.peerId));
         });
         peerIOAdapter.whenPeerIdReady();
+        console.log('Me: (' + peerIOAdapter.webChannel.myId + '; ' + peerIOAdapter.replicaNumber + ')Peers: ')
+        peerIOAdapter.peers.forEach(function(peer) {
+          console.log("ID: " + peer.id)
+        });
       });
     } else if (msg.action === 'open') {
       var key = wc.openForJoining();
-      console.log('NETFLUX (' + wc.myId + '): webChannel OPEN ');
       peerIOAdapter.first = true;
       peerIOAdapter.joinDoc = true;
       peerIOAdapter.coordinator.giveCopy(null);
