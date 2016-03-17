@@ -721,9 +721,9 @@ Coordinator.prototype.cleanBufferTextOp = function () {
             var aLogootOperation = to.applyTo(this.ropes);
 
             if (aLogootOperation.id !== undefined) {
-              LoggingService.logSentOperation(aLogootOperation.id);
+              loggingService.logSentOperation(aLogootOperation.id);
             } else {
-              LoggingService.logSentOperation(aLogootOperation.lid);
+              loggingService.logSentOperation(aLogootOperation.lid);
             }
 
 
