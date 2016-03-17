@@ -1575,8 +1575,8 @@ PeerIOAdapter.prototype.handleEvent = function (args) {
           break;
         case 'queryUserInfo':
           var remotePeerId = data.data.peerId;
-          this.emit('addUser', data.data.replicaNumber, data.data.username);
           this.setReplicaNumber(remotePeerId, data.data.replicaNumber);
+          this.emit('addUser', data.data.replicaNumber, data.data.username);
           data = {
               peerId : this.webChannel.myId,
               replicaNumber : this.replicaNumber,
@@ -1647,19 +1647,27 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
   //this.peer = new Peer(peerServerId, {host: '/', port: 8080, path: '/peerjs'}); //signaling server on mute demo server
   /* Netflux */
   this.webChannel.onJoining = function (id) {
+    console.log('WebChannel ONJOINING: ' + id)
     peerIOAdapter.peers.push(new PeerInfo(id));
+    console.log('ALL PEERS AFTER JOINING: ', peerIOAdapter.peers)
   };
-  this.webChannel.onLeaving = function(id){
+  this.webChannel.onLeaving = function (id) {
+    console.log('ALL PEERS BEFORE LEAVING: ', peerIOAdapter.peers)
     console.log('NETFLUX: leaviiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiing: ' + id)
     peerIOAdapter.emit('removeUser', peerIOAdapter.getReplicaNumber(id));
-    var peerToRemove;
+    var peerToRemove = null;
     for (var i in peerIOAdapter.peers) {
       if (id === peerIOAdapter.peers[i].id) {
+        console.log('PEER TO REMOVE: ' + i);
         peerToRemove = i
         break;
       }
     }
-    peerIOAdapter.peers.splice(peerToRemove, 1);
+    console.log('WebChannel ONLEAVING: ' + id);
+    if (peerToRemove !== null) {
+      peerIOAdapter.peers.splice(peerToRemove, 1);
+    }
+    console.log('ALL PEERS AFTER LEAVING: ', peerIOAdapter.peers)
   };
   this.webChannel.onMessage = function (id, msg) { peerIOAdapter.handleEvent(msg); };
   var infoPeer = {
@@ -1693,10 +1701,6 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
           peerIOAdapter.peers.push(new PeerInfo(ch.peerId));
         });
         peerIOAdapter.whenPeerIdReady();
-        console.log('Me: (' + peerIOAdapter.webChannel.myId + '; ' + peerIOAdapter.replicaNumber + ')Peers: ')
-        peerIOAdapter.peers.forEach(function(peer) {
-          console.log("ID: " + peer.id)
-        });
       });
     } else if (msg.action === 'open') {
       var key = wc.openForJoining();
@@ -1738,6 +1742,7 @@ PeerIOAdapter.prototype.toOfflineMode = function () {
   if(this.socketServer !== null && this.socketServer !== undefined) {
     this.socketServer.disconnect();
     this.webChannel.leave();
+    console.log('OFFLINE MOOOOOOOOOOOOOOOOOOOOOOOOOOOOOODE')
     this.peers = [];
   }
 };
@@ -1782,9 +1787,9 @@ PeerIOAdapter.prototype.getReplicaNumber = function(peerId) {
   return null;
 };
 
-PeerIOAdapter.prototype.setReplicaNumber = function(peerID, replicaNumber) {
+PeerIOAdapter.prototype.setReplicaNumber = function(peerId, replicaNumber) {
   for (var i = 0; i < this.peers.length; i++) {
-    if(this.peers[i].id === peerID){
+    if(this.peers[i].id === peerId){
       this.peers[i].setReplicaNumber(replicaNumber);
       break;
     }
