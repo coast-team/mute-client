@@ -1778,6 +1778,7 @@ var PeerIOAdapter = function(coordinator, signaling){
   this.webChannel = new nf.WebChannel({signaling: signaling}); //the main object of Netflux.js which replaces this.peer
   this.peers = []; // Array[PeerInfo]
   this.reconnect = false;
+  peerIOAdapter.openForJoining = false;
   this.socketServer = null;
   this.connectionCreated = false;
   this.infosUsersModule = null;
@@ -1980,6 +1981,10 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
       isReconnecting: peerIOAdapter.reconnect
     };
     peerIOAdapter.socketServer.emit('newPeer', infoPeer);
+    if (peerIOAdapter.reconnect && peerIOAdapter.openForJoining) {
+      peerIOAdapter.webChannel.openForJoining()
+      console.log('WEBCHANNEL is OPEN available for joining again')
+    }
     peerIOAdapter.reconnect = true;
   });
 
@@ -2010,10 +2015,11 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
         peerIOAdapter.whenPeerIdReady();
       });
     } else if (msg.action === 'open') {
-      var key = wc.openForJoining();
+      wc.openForJoining();
       peerIOAdapter.first = true;
       peerIOAdapter.joinDoc = true;
       peerIOAdapter.coordinator.giveCopy(null);
+      peerIOAdapter.openForJoining = true;
 
       var data = {
         replicaNumber: peerIOAdapter.replicaNumber,
