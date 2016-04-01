@@ -1971,7 +1971,6 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
       key: key,
     };
     peerIOAdapter.socketServer.emit('newPeer', infoPeer);
-    peerIOAdapter.reconnect = true;
   });
 
   this.socketServer.on('newPeerResponse', function (msg) {
@@ -2017,6 +2016,7 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
         });
       }
     }
+    peerIOAdapter.reconnect = true;
   });
 
   this.coordinator.on('operations', function (logootSOperations) {
