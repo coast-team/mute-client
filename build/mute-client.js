@@ -2058,7 +2058,7 @@ PeerIOAdapter.prototype.joinWebChannel = function (index, keys, shouldOpen) {
     })
     .catch(function () {
       if (index < keys.length - 1) {
-        peerIOAdapter.joinWebChannel(index++, keys, shouldOpen)
+        peerIOAdapter.joinWebChannel(++index, keys, shouldOpen)
       }
     });
 }
