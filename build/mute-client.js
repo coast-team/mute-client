@@ -2059,6 +2059,12 @@ PeerIOAdapter.prototype.joinWebChannel = function (index, keys, shouldOpen) {
     .catch(function () {
       if (index < keys.length - 1) {
         peerIOAdapter.joinWebChannel(++index, keys, shouldOpen)
+      } else {
+        var key = peerIOAdapter.webChannel.id + peerIOAdapter.webChannel.myId;
+        peerIOAdapter.socketServer.emit('newPeer', {
+          docId: peerIOAdapter.coordinator.docID,
+          key: key
+        });
       }
     });
 }
