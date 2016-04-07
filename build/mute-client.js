@@ -1993,7 +1993,29 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
 
       var wc = peerIOAdapter.webChannel;
       if (msg.action === 'join') {
-        peerIOAdapter.joinWebChannel(0, msg.keys, msg.shouldOpen);
+        // peerIOAdapter.joinWebChannel(0, msg.keys, msg.shouldOpen);
+        wc.join(msg.keys[0])
+          .then(function() {
+            console.log('JOIN success')
+            wc.channels.forEach(function (ch) {
+              peerIOAdapter.peers.push(new PeerInfo(ch.peerId));
+            });
+            if (msg.shouldOpen) {
+              wc.openForJoining();
+              peerIOAdapter.socketServer.emit('key', {
+                docId: peerIOAdapter.coordinator.docID, key: wc.id + wc.myId
+              });
+            }
+            peerIOAdapter.whenPeerIdReady();
+          })
+          .catch(function () {
+            console.log('JOIN fail')
+            var key = peerIOAdapter.webChannel.id + peerIOAdapter.webChannel.myId;
+            peerIOAdapter.socketServer.emit('newPeer', {
+              docId: peerIOAdapter.coordinator.docID,
+              key: key
+            });
+          })
       } else if (msg.action === 'open') {
         wc.openForJoining();
         peerIOAdapter.first = true;
