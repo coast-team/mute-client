@@ -1477,7 +1477,7 @@ var PeerIOAdapter = function(coordinator, signaling){
   var peerIOAdapter = this;
 
   this.coordinator = coordinator; // coordinator of the current peer
-  this.webChannel = new nf.WebChannel({signaling: signaling}); //the main object of Netflux.js which replaces this.peer
+  this.webChannel = new netflux.WebChannel({signaling: signaling}); //the main object of Netflux.js which replaces this.peer
   this.peers = []; // Array[PeerInfo]
   this.reconnect = false;
   this.socketServer = null;
@@ -1703,10 +1703,12 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
               peerIOAdapter.peers.push(new PeerInfo(ch.peerId));
             });
             if (msg.shouldOpen) {
-              wc.openForJoining();
-              peerIOAdapter.socketServer.emit('key', {
-                docId: peerIOAdapter.coordinator.docID, key: wc.id + wc.myId
-              });
+              wc.open()
+                .then(function (data) {
+                  peerIOAdapter.socketServer.emit('key', {
+                    docId: peerIOAdapter.coordinator.docID, key: data.key
+                  });
+                });
             }
             peerIOAdapter.whenPeerIdReady();
           })
@@ -1719,7 +1721,7 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
             });
           })
       } else if (msg.action === 'open') {
-        wc.openForJoining();
+        wc.open();
         peerIOAdapter.first = true;
         peerIOAdapter.joinDoc = true;
         peerIOAdapter.coordinator.giveCopy(null);
@@ -1734,10 +1736,12 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
     } else if (peerIOAdapter.webChannel.channels.size !== 0) {
       if (msg.shouldOpen) {
         var wc = peerIOAdapter.webChannel;
-        wc.openForJoining();
-        peerIOAdapter.socketServer.emit('key', {
-          docId: peerIOAdapter.coordinator.docID, key: wc.id + wc.myId
-        });
+        wc.open()
+          .then(function (data) {
+            peerIOAdapter.socketServer.emit('key', {
+              docId: peerIOAdapter.coordinator.docID, key: data.key
+            });
+          });
       }
     }
     peerIOAdapter.reconnect = true;
@@ -1773,10 +1777,12 @@ PeerIOAdapter.prototype.joinWebChannel = function (index, keys, shouldOpen) {
         peerIOAdapter.peers.push(new PeerInfo(ch.peerId));
       });
       if (shouldOpen) {
-        wc.openForJoining();
-        peerIOAdapter.socketServer.emit('key', {
-          docId: peerIOAdapter.coordinator.docID, key: wc.id + wc.myId
-        });
+        wc.open()
+          .then(function (data) {
+            peerIOAdapter.socketServer.emit('key', {
+              docId: peerIOAdapter.coordinator.docID, key: data.key
+            });
+          });
       }
       peerIOAdapter.whenPeerIdReady();
     })
