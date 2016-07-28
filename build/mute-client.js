@@ -1703,10 +1703,10 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
               peerIOAdapter.peers.push(new PeerInfo(ch.peerId));
             });
             if (msg.shouldOpen) {
-              wc.open()
+              wc.open({key: wc.id + wc.myId})
                 .then(function (data) {
                   peerIOAdapter.socketServer.emit('key', {
-                    docId: peerIOAdapter.coordinator.docID, key: data.key
+                    docId: peerIOAdapter.coordinator.docID, key: wc.id + wc.myId
                   });
                 });
             }
@@ -1721,7 +1721,7 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
             });
           })
       } else if (msg.action === 'open') {
-        wc.open();
+        wc.open({key: wc.id + wc.myId});
         peerIOAdapter.first = true;
         peerIOAdapter.joinDoc = true;
         peerIOAdapter.coordinator.giveCopy(null);
@@ -1736,10 +1736,10 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
     } else if (peerIOAdapter.webChannel.channels.size !== 0) {
       if (msg.shouldOpen) {
         var wc = peerIOAdapter.webChannel;
-        wc.open()
+        wc.open({key: wc.id + wc.myId})
           .then(function (data) {
             peerIOAdapter.socketServer.emit('key', {
-              docId: peerIOAdapter.coordinator.docID, key: data.key
+              docId: peerIOAdapter.coordinator.docID, key: wc.id + wc.myId
             });
           });
       }
@@ -1777,10 +1777,10 @@ PeerIOAdapter.prototype.joinWebChannel = function (index, keys, shouldOpen) {
         peerIOAdapter.peers.push(new PeerInfo(ch.peerId));
       });
       if (shouldOpen) {
-        wc.open()
+        wc.open({key: wc.id + wc.myId})
           .then(function (data) {
             peerIOAdapter.socketServer.emit('key', {
-              docId: peerIOAdapter.coordinator.docID, key: data.key
+              docId: peerIOAdapter.coordinator.docID, key: wc.id + wc.myId
             });
           });
       }
