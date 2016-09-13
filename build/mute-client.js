@@ -820,8 +820,6 @@ Coordinator.prototype.giveCopy = function(data) {
     args.lastModificationDate = this.lastModificationDate;
     args.creationDate = this.creationDate;
     args.history = this.history;
-    console.log("give copy !!");
-    console.log(args);
     if(data !== null){
         args.callerID = data;
         this.emit('doc', args);
@@ -1208,7 +1206,7 @@ var InfosUsersModule = function (docID, coordinator, editor, network, usernameMa
                 infosUsersModule.updateRemoteInfosUsers();
             }
         });
-        
+
         network.on('changeCollaboratorUsername', function (data) {
             var replicaNumber = data.replicaNumber;
             var username = data.username;
@@ -1329,7 +1327,7 @@ InfosUsersModule.prototype.applyRemoteOperations = function (operations) {
 
     for(i=0; i<operations.length; i++) {
         operation = operations[i];
-        
+
         if(operation.content !== undefined && operation.offset !== undefined && operation.content !== null && operation.offset !== null) {
             // Insertion
             diffCursor = operation.content.length;
@@ -1387,7 +1385,6 @@ InfosUsersModule.prototype.updateRemoteInfosUsers = function () {
 };
 
 InfosUsersModule.prototype.addUser = function (replicaNumber, username) {
-    console.log("BIM BADA BOUM !!");
     this.infosUsers[replicaNumber] = {
         username: username,
         cursorIndex: 0,
@@ -1398,7 +1395,7 @@ InfosUsersModule.prototype.addUser = function (replicaNumber, username) {
 InfosUsersModule.prototype.removeUser = function (replicaNumber) {
     if(parseInt(this.replicaNumber) !== parseInt(replicaNumber)) {
         delete this.infosUsers[replicaNumber];
-    }   
+    }
 };
 
 InfosUsersModule.prototype.updateLocalUsername = function (username) {
@@ -1438,6 +1435,7 @@ InfosUsersModule.prototype.onCoordinatorDisposedHandler = function () {
 };
 
 module.exports = InfosUsersModule;
+
 },{"events":7}],5:[function(require,module,exports){
 var events = require('events');
 
@@ -1564,6 +1562,7 @@ PeerIOAdapter.prototype.handleEvent = function (args) {
   try {
     var data = JSON.parse(args);
     if (data.event !== null && data.event !== undefined && this.disposed === false) {
+      console.log('EVENT: ' + data.event, data)
       switch (data.event) {
         case 'sendOps':
           data.data.replicaNumber = this.replicaNumber;
@@ -1699,9 +1698,6 @@ PeerIOAdapter.prototype.toOnlineMode = function () {
         wc.join(msg.keys[0])
           .then(function() {
             console.log('JOIN success')
-            wc.channels.forEach(function (ch) {
-              peerIOAdapter.peers.push(new PeerInfo(ch.peerId));
-            });
             if (msg.shouldOpen) {
               wc.open({key: wc.id + wc.myId})
                 .then(function (data) {
@@ -1773,9 +1769,6 @@ PeerIOAdapter.prototype.joinWebChannel = function (index, keys, shouldOpen) {
   var wc = this.webChannel;
   wc.join(keys[index])
     .then(function() {
-      wc.channels.forEach(function (ch) {
-        peerIOAdapter.peers.push(new PeerInfo(ch.peerId));
-      });
       if (shouldOpen) {
         wc.open({key: wc.id + wc.myId})
           .then(function (data) {
@@ -1797,6 +1790,17 @@ PeerIOAdapter.prototype.joinWebChannel = function (index, keys, shouldOpen) {
         });
       }
     });
+}
+
+PeerIOAdapter.prototype.addBot = function (url) {
+  var wc = this.webChannel;
+  wc.addBotServer(url)
+    .then(function (id) {
+      // wc.sendTo(id, JSON.stringify(new Data('updateReplicaNumber', )))
+    })
+    .catch(function () {
+      console.error('Cound not add bot: ' + url)
+    })
 }
 
 PeerIOAdapter.prototype.toOfflineMode = function () {
